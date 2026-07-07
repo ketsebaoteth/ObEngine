@@ -91,9 +91,6 @@ std::expected<void, std::string> VulkanRenderer::createFramebuffers() {
                              std::to_string(i));
     }
   }
-  OB_CORE_INFO("Successfully bound {} modern 3D render framebuffers to the "
-               "pipeline pass context.",
-               m_swapChainFramebuffers.size());
   return {};
 }
 } // namespace ob

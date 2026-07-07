@@ -3,6 +3,7 @@
 #include "windowing/window.hpp"
 #include <GLFW/glfw3.h>
 #include <cstdint>
+#include <cstdio>
 #include <expected>
 
 namespace ob {
@@ -34,7 +35,100 @@ std::expected<void, std::string> GlfwWindow::init(WindowConfig &windowConfig) {
   if (glfwExtensions) {
     m_extensions.assign(glfwExtensions, glfwExtensions + glfwExtensionsCount);
   }
+
+  // event system
+  glfwSetWindowUserPointer(m_window, this);
+
+  glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow *window, int width,
+                                              int height) {
+    auto *self = static_cast<GlfwWindow *>(glfwGetWindowUserPointer(window));
+    if (self) {
+      Event event{};
+      event.type = EventType::WindowResize;
+      event.window.width = static_cast<uint32_t>(width);
+      event.window.height = static_cast<uint32_t>(height);
+      self->m_pending_events.push_back(event);
+    }
+  });
+
+  glfwSetKeyCallback(m_window, [](GLFWwindow *window, int key, int scancode,
+                                  int action, int mods) {
+    auto *self = static_cast<GlfwWindow *>(glfwGetWindowUserPointer(window));
+    if (self) {
+      Event event{};
+      event.key.code = key;
+      event.key.scancode = scancode;
+      event.key.mods = mods;
+
+      if (action == GLFW_PRESS)
+        event.type = EventType::KeyPressed;
+      else if (action == GLFW_RELEASE)
+        event.type = EventType::KeyReleased;
+      else if (action == GLFW_REPEAT)
+        event.type = EventType::KeyRepeat;
+
+      self->m_pending_events.push_back(event);
+    }
+  });
+
+  glfwSetCursorPosCallback(m_window, [](GLFWwindow *window, double xpos,
+                                        double ypos) {
+    auto *self = static_cast<GlfwWindow *>(glfwGetWindowUserPointer(window));
+    if (self) {
+      Event event{};
+      event.type = EventType::MouseMoved;
+      event.mouse_moved.x = xpos;
+      event.mouse_moved.y = ypos;
+      self->m_pending_events.push_back(event);
+    }
+  });
+
+  glfwSetMouseButtonCallback(m_window, [](GLFWwindow *window, int button,
+                                          int action, int mods) {
+    auto *self = static_cast<GlfwWindow *>(glfwGetWindowUserPointer(window));
+    if (self) {
+      Event event{};
+      event.mouse_button.button = button;
+      event.mouse_button.mods = mods;
+
+      if (action == GLFW_PRESS)
+        event.type = EventType::MouseButtonPressed;
+      else if (action == GLFW_RELEASE)
+        event.type = EventType::MouseButtonReleased;
+
+      self->m_pending_events.push_back(event);
+    }
+  });
+
+  glfwSetScrollCallback(m_window, [](GLFWwindow *window, double xoffset,
+                                     double yoffset) {
+    auto *self = static_cast<GlfwWindow *>(glfwGetWindowUserPointer(window));
+    if (self) {
+      Event event{};
+      event.type = EventType::MouseScrolled;
+      event.mouse_scrolled.x_offset = xoffset;
+      event.mouse_scrolled.y_offset = yoffset;
+      self->m_pending_events.push_back(event);
+    }
+  });
   return {};
+}
+uint32_t GlfwWindow::get_width() const {
+  int w;
+  glfwGetFramebufferSize(m_window, &w, nullptr);
+  return static_cast<uint32_t>(w);
+}
+
+uint32_t GlfwWindow::get_height() const {
+  int h;
+  glfwGetFramebufferSize(m_window, nullptr, &h);
+  return static_cast<uint32_t>(h);
+}
+std::vector<Event> GlfwWindow::get_events() {
+  glfwPollEvents();
+  std::vector<Event> current_frame_events = std::move(m_pending_events);
+  m_pending_events.clear();
+  return current_frame_events;
 }
 
 void GlfwWindow::poll_events() { glfwPollEvents(); }

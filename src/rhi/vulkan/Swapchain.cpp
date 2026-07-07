@@ -161,9 +161,6 @@ std::expected<void, std::string> VulkanRenderer::createSwapchainImageViews() {
       return std::unexpected("Failed to create image views");
     }
   }
-  OB_CORE_INFO(
-      "Successfully generated {} Vulkan image views for frame presentation.",
-      m_swapchainImageViews.size());
   return {};
 };
 
@@ -210,10 +207,37 @@ std::expected<void, std::string> VulkanRenderer::createDepthResources() {
                            "concrete target view for depth buffer.");
   }
 
-  OB_CORE_INFO(
-      "Vulkan Hardware depth processing texture loaded successfully ({}x{}).",
-      m_swapChainExtent.width, m_swapChainExtent.height);
   return {};
+}
+void VulkanRenderer::cleanupSwapchain() {
+  for (auto framebuffer : m_swapChainFramebuffers) {
+    if (framebuffer != VK_NULL_HANDLE) {
+      vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    }
+  }
+  m_swapChainFramebuffers.clear();
+
+  if (m_depthImageView != VK_NULL_HANDLE) {
+    vkDestroyImageView(m_device, m_depthImageView, nullptr);
+    m_depthImageView = VK_NULL_HANDLE;
+  }
+  if (m_depthImage != VK_NULL_HANDLE) {
+    vmaDestroyImage(m_allocator, m_depthImage, m_depthAllocation);
+    m_depthImage = VK_NULL_HANDLE;
+    m_depthAllocation = VK_NULL_HANDLE;
+  }
+
+  for (auto imageView : m_swapchainImageViews) {
+    if (imageView != VK_NULL_HANDLE) {
+      vkDestroyImageView(m_device, imageView, nullptr);
+    }
+  }
+  m_swapchainImageViews.clear();
+
+  if (m_swapchain != VK_NULL_HANDLE) {
+    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+    m_swapchain = VK_NULL_HANDLE;
+  }
 }
 
 } // namespace ob

@@ -42,6 +42,7 @@ public:
   virtual void waitDeviceIdle() = 0;
   virtual void shutdown() = 0;
   virtual void resize(uint32_t w, uint32_t h) = 0;
-  virtual void present(std::span<const RenderItem> renderQueue) = 0;
+  virtual void present(std::span<const RenderItem> renderQueue,
+                       const glm::mat4 &view, const glm::mat4 &proj) = 0;
 };
 } // namespace ob

@@ -519,7 +519,36 @@ void VulkanRenderer::waitDeviceIdle() {
 }
 
 void VulkanRenderer::resize(uint32_t w, uint32_t h) {
-  // Leave empty for now
-}
+  if (w == 0 || h == 0) {
+    return;
+  }
+  waitDeviceIdle();
+  cleanupSwapchain();
+  m_RendererConfig.width = w;
+  m_RendererConfig.height = h;
+  auto resSC = createSwapChain();
+  if (!resSC) {
+    OB_CORE_ERROR("Swapchain Recreation Failure: {}", resSC.error());
+    return;
+  }
 
+  auto resIV = createSwapchainImageViews();
+  if (!resIV) {
+    OB_CORE_ERROR("Swapchain Image Views Recreation Failure: {}",
+                  resIV.error());
+    return;
+  }
+
+  auto resDR = createDepthResources();
+  if (!resDR) {
+    OB_CORE_ERROR("Depth Resources Recreation Failure: {}", resDR.error());
+    return;
+  }
+
+  auto resFB = createFramebuffers();
+  if (!resFB) {
+    OB_CORE_ERROR("Framebuffer Generation Failure: {}", resFB.error());
+    return;
+  }
+}
 } // namespace ob

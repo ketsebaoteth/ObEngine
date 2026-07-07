@@ -5,12 +5,13 @@
 #include <glm/glm.hpp>
 
 namespace ob {
-static void recordCommandBuffer(
+void recordCommandBuffer(
     VkCommandBuffer commandBuffer, VkRenderPass renderPass,
     VkFramebuffer framebuffer, VkExtent2D extent, VkPipeline graphicsPipeline,
     VkPipelineLayout pipelineLayout, std::span<const RenderItem> renderQueue,
     const std::unordered_map<MeshHandle, VulkanRenderer::VulkanMeshBackend>
-        &meshCache) {
+        &meshCache,
+    VkDescriptorSet globalDescriptorSet) {
   VkCommandBufferBeginInfo beginInfo{};
   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -53,15 +54,18 @@ static void recordCommandBuffer(
   scissor.extent = extent;
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          pipelineLayout, 0, 1, &globalDescriptorSet, 0,
+                          nullptr);
+
   for (const auto &item : renderQueue) {
     auto it = meshCache.find(item.handle);
     if (it == meshCache.end())
-      continue; // Omit unregistered/invalid meshes safely
+      continue;
 
     const auto &backendMesh = it->second;
 
     if (backendMesh.vertexBuffer != VK_NULL_HANDLE) {
-      // Push calculation down
       vkCmdPushConstants(commandBuffer, pipelineLayout,
                          VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
                          &item.transform);
@@ -88,7 +92,8 @@ static void recordCommandBuffer(
   }
 }
 
-void VulkanRenderer::present(std::span<const RenderItem> renderQueue) {
+void VulkanRenderer::present(std::span<const RenderItem> renderQueue,
+                             const glm::mat4 &view, const glm::mat4 &proj) {
   vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE,
                   UINT64_MAX);
 
@@ -105,13 +110,21 @@ void VulkanRenderer::present(std::span<const RenderItem> renderQueue) {
     return;
   }
 
+  // 1. Update the persistently mapped uniform memory block instantly via fast
+  // memcpy
+  GlobalUboPayload payload{.view = view, .proj = proj};
+  std::memcpy(m_frameUboBuffers[m_currentFrame].mappedData, &payload,
+              sizeof(GlobalUboPayload));
+
   vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
   vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
 
+  // 2. Forward the current frame's descriptor set to your recording command
+  // pass
   recordCommandBuffer(m_commandBuffers[m_currentFrame], m_renderPass,
                       m_swapChainFramebuffers[imageIndex], m_swapChainExtent,
                       m_graphicsPipeline, m_pipelineLayout, renderQueue,
-                      m_meshes);
+                      m_meshes, m_globalDescriptorSets[m_currentFrame]);
 
   VkSubmitInfo submitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO};
   VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
@@ -143,8 +156,11 @@ void VulkanRenderer::present(std::span<const RenderItem> renderQueue) {
   presentInfo.pImageIndices = &imageIndex;
 
   result = vkQueuePresentKHR(m_present_queue, &presentInfo);
-  if (result == VK_ERROR_OUT_OF_DATE_KHR ||
-      result == VK_SUBOPTIMAL_KHR) { /* handle resize */
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    // Trigger manual resizing notification if out of sync
+    OB_CORE_WARN("Swapchain out of date or suboptimal. Re-anchoring via "
+                 "incoming event loop.");
+    // incoming event loop.");
   } else if (result != VK_SUCCESS) {
     OB_CORE_ERROR("Vulkan Execution Error: Critical failure presenting "
                   "finalized frame to display surface.");

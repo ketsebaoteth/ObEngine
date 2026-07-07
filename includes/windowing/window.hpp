@@ -1,5 +1,6 @@
 #pragma once
 
+#include "event/event.hpp"
 #include "rhi/renderer.hpp"
 #include <cstdint>
 #include <expected>
@@ -20,8 +21,11 @@ public:
   virtual void poll_events() = 0;
   [[nodiscard]] virtual bool should_close() const = 0;
   virtual void shutdown() = 0;
+  [[nodiscard]] virtual uint32_t get_width() const = 0;
+  [[nodiscard]] virtual uint32_t get_height() const = 0;
 
   virtual NativeWindowHandle get_native_handle() const = 0;
+  virtual std::vector<Event> get_events() = 0;
 };
 
 } // namespace ob

@@ -17,6 +17,11 @@ struct SwapChainSupportDetails {
   std::vector<VkPresentModeKHR> presentModes;
 };
 
+struct GlobalUboPayload {
+  glm::mat4 view;
+  glm::mat4 proj;
+};
+
 class VulkanRenderer : public IRenderer {
 public:
   VulkanRenderer() = default;
@@ -31,7 +36,8 @@ public:
                                         const RendererConfig &config) override;
   void shutdown() override;
   void resize(uint32_t w, uint32_t h) override;
-  void present(std::span<const RenderItem> renderQueue) override;
+  void present(std::span<const RenderItem> renderQueue, const glm::mat4 &view,
+               const glm::mat4 &proj) override;
 
   VmaAllocator getAllocator() { return m_allocator; }
   VkDevice getDevice() const { return m_device; }
@@ -57,6 +63,7 @@ private:
   std::unordered_map<MeshHandle, VulkanMeshBackend> m_meshes;
 
   bool isDeviceSuitable();
+  void cleanupSwapchain();
   std::expected<void, std::string> pickPhysicalDevice();
   std::expected<void, std::string> createLogicalDevice();
   std::expected<void, std::string> setupDebugMessenger();
@@ -68,6 +75,8 @@ private:
   std::expected<void, std::string> createCommandInfrastructure();
   std::expected<void, std::string> createAllocator();
   std::expected<void, std::string> createSyncObjects();
+  std::expected<void, std::string> createDescriptorSetLayout();
+  std::expected<void, std::string> createUboResources();
 
   // graphics pipeline related
   std::expected<VkShaderModule, std::string>
@@ -84,6 +93,17 @@ private:
   std::expected<void, std::string> createRenderPass();
 
 private:
+  struct FrameUBO {
+    VkBuffer buffer{VK_NULL_HANDLE};
+    VmaAllocation allocation{VK_NULL_HANDLE};
+    void *mappedData{nullptr};
+  };
+
+  VkDescriptorSetLayout m_globalDescriptorSetLayout{VK_NULL_HANDLE};
+  VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
+  std::vector<FrameUBO> m_frameUboBuffers;
+  std::vector<VkDescriptorSet> m_globalDescriptorSets;
+
   std::vector<const char *> m_deviceExtensions = {
       VK_KHR_SWAPCHAIN_EXTENSION_NAME,
   };
