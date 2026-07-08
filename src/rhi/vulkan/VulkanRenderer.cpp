@@ -1,3 +1,4 @@
+#include "imgui_impl_vulkan.h"
 #include "log/log.hpp"
 #include "rhi/renderer.hpp"
 #include "rhi/vulkan_renderer.hpp"
@@ -34,19 +35,17 @@ std::expected<void, std::string> VulkanRenderer::setupDebugMessenger() {
 }
 
 std::expected<void, std::string> VulkanRenderer::createSurface() {
-  if (!m_nativeWindowHandle.window) {
+  if (!m_RendererConfig.surface_creator) {
     return std::unexpected(
-        "Cannot create surface: Native window pointer is null");
+        "Cannot create surface: surface_creator callback is null");
   }
-  // TODO: should be agnostic
-  GLFWwindow *rawWindow =
-      static_cast<GLFWwindow *>(m_nativeWindowHandle.window);
   VkSurfaceKHR surface = VK_NULL_HANDLE;
-  VkResult result =
-      glfwCreateWindowSurface(m_instance, rawWindow, nullptr, &surface);
 
-  if (result != VK_SUCCESS) {
-    return std::unexpected("Failed to create GLFW window surface");
+  int result = m_RendererConfig.surface_creator(
+      static_cast<void *>(m_instance), nullptr, static_cast<void *>(&surface));
+
+  if (result != VK_SUCCESS) { // VK_SUCCESS is 0
+    return std::unexpected("Failed to create window surface via callback");
   }
 
   m_surface = surface;
@@ -338,11 +337,29 @@ VulkanRenderer::createSyncObjects() { // 1. Maintain Frame tracking constraints
                "fully locked and loaded.");
   return {};
 }
+void VulkanRenderer::register_imgui_viewport_texture() {
+  if (m_viewportTarget.imguiDescriptorSet != VK_NULL_HANDLE) {
+    ImGui_ImplVulkan_RemoveTexture(m_viewportTarget.imguiDescriptorSet);
+  }
+
+  m_viewportTarget.imguiDescriptorSet =
+      ImGui_ImplVulkan_AddTexture(m_viewportSampler, m_viewportTarget.colorView,
+                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+VulkanContext VulkanRenderer::get_vulkan_context() const {
+  VulkanContext context;
+  context.device = m_device;
+  context.physicalDevice = m_physicalDevice;
+  context.graphicsQueue = m_graphics_queue;
+  context.instance = m_instance;
+  context.renderPass = m_renderPass;
+  context.commandBuffer = m_commandBuffers[m_currentFrame];
+  return context;
+}
 
 std::expected<void, std::string>
-VulkanRenderer::init(const NativeWindowHandle &nativeWindowHandle,
-                     const RendererConfig &rendererConfig) {
-  m_nativeWindowHandle = nativeWindowHandle;
+VulkanRenderer::init(const RendererConfig &rendererConfig) {
   m_RendererConfig = rendererConfig;
   auto res = volkInitialize();
   if (res != VK_SUCCESS) {
@@ -359,9 +376,8 @@ VulkanRenderer::init(const NativeWindowHandle &nativeWindowHandle,
 
   std::vector<const char *> extensions = {VK_KHR_SURFACE_EXTENSION_NAME};
 
-  extensions.insert(extensions.end(),
-                    nativeWindowHandle.required_instance_extensions.begin(),
-                    nativeWindowHandle.required_instance_extensions.end());
+  extensions.insert(extensions.end(), rendererConfig.vulkanExtensions.begin(),
+                    rendererConfig.vulkanExtensions.end());
 
   std::vector<const char *> validationLayers;
   if (rendererConfig.validation) {
@@ -394,14 +410,20 @@ VulkanRenderer::init(const NativeWindowHandle &nativeWindowHandle,
       .and_then([&]() { return pickPhysicalDevice(); })
       .and_then([&]() { return createLogicalDevice(); })
       .and_then([&]() { return createAllocator(); })
+      .and_then([&]() { return createDescriptorSetLayout(); })
       .and_then([&]() { return createSwapChain(); })
       .and_then([&]() { return createSwapchainImageViews(); })
       .and_then([&]() { return createRenderPass(); })
       .and_then([&]() { return createGraphicsPipeline(); })
       .and_then([&]() { return createDepthResources(); })
       .and_then([&]() { return createFramebuffers(); })
+      .and_then([&]() { return createUboResources(); })
       .and_then([&]() { return createCommandInfrastructure(); })
-      .and_then([&]() { return createSyncObjects(); });
+      .and_then([&]() { return createSyncObjects(); })
+      .and_then([&]() {
+        return createOffscreenRenderTarget(rendererConfig.width,
+                                           rendererConfig.height);
+      });
 }
 
 VulkanRenderer::~VulkanRenderer() { shutdown(); }

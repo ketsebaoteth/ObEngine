@@ -4,7 +4,6 @@
 #include "utils/io.hpp"
 #include <cstdint>
 #include <vector>
-#include <vulkan/vulkan_core.h>
 
 namespace ob {
 std::expected<VkShaderModule, std::string>

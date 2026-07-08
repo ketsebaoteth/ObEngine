@@ -5,9 +5,9 @@
 #include <entt/entt.hpp>
 #include <expected>
 #include <string>
-#include <vector>
 
 namespace ob {
+class VulkanContext;
 
 struct RenderItem {
   MeshHandle handle{0};
@@ -15,19 +15,26 @@ struct RenderItem {
 };
 
 struct NativeWindowHandle {
-  void *hwnd = nullptr;    // Windows HWND
-  void *display = nullptr; // X11 Display*
-  void *surface = nullptr; // Wayland wl_surface*
-  void *window = nullptr;  // GLFWwindow* or ANativeWindow*
-  std::vector<const char *> required_instance_extensions;
+#if defined(_WIN32)
+  void *hwnd = nullptr;
+#elif defined(__linux__)
+  void *display = nullptr;
+  void *surface = nullptr;
+#endif
 };
 
 struct RendererConfig {
   uint32_t width;
   uint32_t height;
   bool vsync = true;
+
+  // vulkan related
+  std::vector<const char *> vulkanExtensions;
   bool validation = false;
+  std::function<int(void *, const void *, void *)> surface_creator;
 };
+
+enum class RendererType { VULKAN, OPENGL, D3D };
 
 class IRenderer {
 public:
@@ -37,12 +44,18 @@ public:
                                 std::span<const uint32_t> indices) = 0;
   virtual void destroyMesh(MeshHandle handle) = 0;
 
-  virtual std::expected<void, std::string> init(const NativeWindowHandle &,
-                                                const RendererConfig &) = 0;
+  virtual std::expected<void, std::string> init(const RendererConfig &) = 0;
   virtual void waitDeviceIdle() = 0;
   virtual void shutdown() = 0;
   virtual void resize(uint32_t w, uint32_t h) = 0;
   virtual void present(std::span<const RenderItem> renderQueue,
                        const glm::mat4 &view, const glm::mat4 &proj) = 0;
+
+  virtual void *get_viewport_texture_id() const = 0;
+
+  [[nodiscard]] virtual VulkanContext get_vulkan_context() const = 0;
+  virtual VkImageView getViewportImageView() const = 0;
+  virtual void register_imgui_viewport_texture() = 0;
+  virtual VkSampler getViewportSampler() const = 0;
 };
 } // namespace ob

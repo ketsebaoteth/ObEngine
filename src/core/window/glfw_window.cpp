@@ -1,9 +1,9 @@
 #include "windowing/glfw_window.hpp"
+#include "GLFW/glfw3native.h"
 #include "rhi/renderer.hpp"
 #include "windowing/window.hpp"
 #include <GLFW/glfw3.h>
 #include <cstdint>
-#include <cstdio>
 #include <expected>
 
 namespace ob {
@@ -26,7 +26,6 @@ std::expected<void, std::string> GlfwWindow::init(WindowConfig &windowConfig) {
   if (!m_window) {
     return std::unexpected("unabled to create glfw window");
   }
-  // show window explicitly
   glfwShowWindow(m_window);
 
   uint32_t glfwExtensionsCount = 0;
@@ -36,7 +35,6 @@ std::expected<void, std::string> GlfwWindow::init(WindowConfig &windowConfig) {
     m_extensions.assign(glfwExtensions, glfwExtensions + glfwExtensionsCount);
   }
 
-  // event system
   glfwSetWindowUserPointer(m_window, this);
 
   glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow *window, int width,
@@ -113,6 +111,11 @@ std::expected<void, std::string> GlfwWindow::init(WindowConfig &windowConfig) {
   });
   return {};
 }
+
+void *GlfwWindow::get_native_window_ptr() const {
+  return static_cast<void *>(m_window);
+};
+
 uint32_t GlfwWindow::get_width() const {
   int w;
   glfwGetFramebufferSize(m_window, &w, nullptr);
@@ -145,8 +148,42 @@ void GlfwWindow::shutdown() {
 
 NativeWindowHandle GlfwWindow::get_native_handle() const {
   NativeWindowHandle handle{};
-  handle.window = static_cast<void *>(m_window);
-  handle.required_instance_extensions = m_extensions;
+#if defined(_WIN32)
+  handle.hwnd = static_cast<void *>(glfwGetWin32Window(m_window));
+
+#elif defined(__linux__)
+#if defined(GLFW_EXPOSE_NATIVE_WAYLAND) && !defined(GLFW_EXPOSE_NATIVE_X11)
+  handle.display = static_cast<void *>(glfwGetWaylandDisplay());
+  handle.surface = static_cast<void *>(glfwGetWaylandWindow(m_window));
+
+#elif defined(GLFW_EXPOSE_NATIVE_X11) && !defined(GLFW_EXPOSE_NATIVE_WAYLAND)
+  handle.display = static_cast<void *>(glfwGetX11Display());
+  handle.surface = reinterpret_cast<void *>(glfwGetX11Window(m_window));
+
+#elif defined(GLFW_EXPOSE_NATIVE_WAYLAND) && defined(GLFW_EXPOSE_NATIVE_X11)
+  if (glfwGetPlatform() == GLFW_PLATFORM_WAYLAND) {
+    handle.display = static_cast<void *>(glfwGetWaylandDisplay());
+    handle.surface = static_cast<void *>(glfwGetWaylandWindow(m_window));
+  } else {
+    handle.display = static_cast<void *>(glfwGetX11Display());
+    handle.surface = reinterpret_cast<void *>(glfwGetX11Window(m_window));
+  }
+#endif
+#endif
   return handle;
 }
+
+[[nodiscard]] int GlfwWindow::create_vulkan_surface(void *instance,
+                                                    const void *allocator,
+                                                    void *pSurface) {
+  return glfwCreateWindowSurface(
+      static_cast<VkInstance>(instance), m_window,
+      static_cast<const VkAllocationCallbacks *>(allocator),
+      static_cast<VkSurfaceKHR *>(pSurface));
+};
+
+std::vector<const char *> GlfwWindow::get_vulkan_extensions() const {
+  return m_extensions;
+};
+
 } // namespace ob

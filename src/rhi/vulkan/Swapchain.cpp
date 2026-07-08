@@ -1,4 +1,3 @@
-#include "log/log.hpp"
 #include "rhi/vulkan_renderer.hpp"
 #include "vk_mem_alloc.h"
 #include <algorithm>
@@ -9,7 +8,7 @@ SwapChainSupportDetails
 VulkanRenderer::querySwapChainSupportDetails(VkPhysicalDevice device) {
   SwapChainSupportDetails details;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, m_surface,
-                                            &details.capablities);
+                                            &details.capabilities);
   uint32_t formatCount = 0;
   vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_surface, &formatCount,
                                        nullptr);
@@ -84,12 +83,12 @@ std::expected<void, std::string> VulkanRenderer::createSwapChain() {
       chooseSwapSurfaceFormat(supportDetails.formats);
   VkPresentModeKHR presnetMode =
       chooseSwapPresentMode(supportDetails.presentModes);
-  VkExtent2D extent = chooseSwapExtent(supportDetails.capablities);
+  VkExtent2D extent = chooseSwapExtent(supportDetails.capabilities);
 
-  uint32_t imageCount = supportDetails.capablities.minImageCount + 1;
-  if (supportDetails.capablities.maxImageCount > 0 &&
-      imageCount > supportDetails.capablities.maxImageCount) {
-    imageCount = supportDetails.capablities.maxImageCount;
+  uint32_t imageCount = supportDetails.capabilities.minImageCount + 1;
+  if (supportDetails.capabilities.maxImageCount > 0 &&
+      imageCount > supportDetails.capabilities.maxImageCount) {
+    imageCount = supportDetails.capabilities.maxImageCount;
   }
 
   VkCompositeAlphaFlagBitsKHR compositeAlpha =
@@ -117,7 +116,7 @@ std::expected<void, std::string> VulkanRenderer::createSwapChain() {
     createInfo.queueFamilyIndexCount = 0;
     createInfo.pQueueFamilyIndices = nullptr;
   }
-  createInfo.preTransform = supportDetails.capablities.currentTransform;
+  createInfo.preTransform = supportDetails.capabilities.currentTransform;
   createInfo.compositeAlpha = compositeAlpha;
   createInfo.presentMode = presnetMode;
   createInfo.clipped = VK_TRUE;
