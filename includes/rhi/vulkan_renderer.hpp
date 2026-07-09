@@ -18,15 +18,13 @@
 
 namespace ob {
 
-// --- Core Data Structures ---
-
 struct OffscreenRenderTarget {
   VkImage colorImage = VK_NULL_HANDLE;
-  VmaAllocation colorAllocation = VK_NULL_HANDLE; // Changed from VkDeviceMemory
+  VmaAllocation colorAllocation = VK_NULL_HANDLE;
   VkImageView colorView = VK_NULL_HANDLE;
 
   VkImage depthImage = VK_NULL_HANDLE;
-  VmaAllocation depthAllocation = VK_NULL_HANDLE; // Changed from VkDeviceMemory
+  VmaAllocation depthAllocation = VK_NULL_HANDLE;
   VkImageView depthView = VK_NULL_HANDLE;
 
   VkFramebuffer framebuffer = VK_NULL_HANDLE;
@@ -36,6 +34,14 @@ struct OffscreenRenderTarget {
 
   uint32_t width = 0;
   uint32_t height = 0;
+};
+
+struct GPUPointLight {
+  alignas(16) glm::vec3 position;
+  alignas(4) float range;
+
+  alignas(16) glm::vec3 color;
+  alignas(float) float intensity;
 };
 
 struct VulkanContext {
@@ -56,10 +62,16 @@ struct SwapChainSupportDetails {
 struct GlobalUboPayload {
   glm::mat4 view;
   glm::mat4 proj;
+  alignas(16) glm::vec2 screenSize;
 };
-
-// --- Vulkan Renderer Implementation ---
-
+struct PushConstantPayload {
+  glm::mat4 model;                     // 64 bytes
+  alignas(16) glm::vec4 baseColor;     // 16 bytes
+  alignas(16) glm::vec3 emissionColor; // 12 bytes
+  alignas(4) float emissionStrength;   // 4 bytes -> Packed inside padding!
+  alignas(4) float metallic;           // 4 bytes
+  alignas(4) float roughness;          // 4 bytes
+};
 class VulkanRenderer : public IRenderer {
 public:
   struct VulkanMeshBackend {
@@ -72,11 +84,15 @@ public:
     uint32_t indexCount{0};
   };
 
+  static constexpr uint32_t MAX_LIGHTS = 1024;
+  static constexpr uint32_t TILE_SIZE = 16;
+  static constexpr uint32_t MAX_LIGHTS_PER_TILE = 256;
+
 public:
   VulkanRenderer() = default;
   ~VulkanRenderer() override;
 
-  // IRenderer Interface Overrides
+  void updateLightData(std::span<const GPUPointLight> lights) override;
   std::expected<void, std::string> init(const RendererConfig &config) override;
   void shutdown() override;
   void resize(uint32_t w, uint32_t h) override;
@@ -87,10 +103,12 @@ public:
   uploadMesh(std::span<const Vertex> vertices,
              std::span<const uint32_t> indices) override;
   void destroyMesh(MeshHandle handle) override;
-
+  uint32_t getViewportWidth() const override { return m_viewportTarget.width; }
+  uint32_t getViewportHeight() const override {
+    return m_viewportTarget.height;
+  }
   void waitDeviceIdle() override;
-  void
-  register_imgui_viewport_texture() override; // Implementation moved to .cpp!
+  void register_imgui_viewport_texture() override;
 
   // Dynamic Viewport & UI Getters
   [[nodiscard]] void *get_viewport_texture_id() const override {
@@ -123,6 +141,16 @@ public:
                           VkMemoryPropertyFlags properties);
 
 private:
+  VkPipelineLayout m_computePipelineLayout = VK_NULL_HANDLE;
+  VkPipeline m_computePipeline = VK_NULL_HANDLE;
+  struct GPUBuffer {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    void *mappedData = nullptr;
+  };
+  std::vector<GPUBuffer> m_lightBuffers;
+  GPUBuffer m_tileLightIndicesBuffer;
+
   VmaAllocator m_allocator;
   // Buffer allocation helpers
   std::expected<void, std::string>
@@ -145,6 +173,7 @@ private:
   std::expected<void, std::string> createSyncObjects();
   std::expected<void, std::string> createDescriptorSetLayout();
   std::expected<void, std::string> createUboResources();
+  std::expected<void, std::string> createComputePipeline();
 
   // Shader compilation helper
   std::expected<VkShaderModule, std::string>

@@ -2,6 +2,7 @@
 #include "log/log.hpp"
 #include "rhi/renderer.hpp"
 #include "rhi/vulkan_renderer.hpp"
+#include "utils/io.hpp"
 #include "volk.h"
 #include <GLFW/glfw3.h>
 #include <expected>
@@ -357,7 +358,49 @@ VulkanContext VulkanRenderer::get_vulkan_context() const {
   context.commandBuffer = m_commandBuffers[m_currentFrame];
   return context;
 }
+std::expected<void, std::string> VulkanRenderer::createComputePipeline() {
+  std::string compPath = io::ResolveAssetPath("shaders/light_cull.comp.spv");
+  auto compShaderModuleRes = createShaderModule(compPath);
+  if (!compShaderModuleRes) {
+    return std::unexpected("Compute Shader Compilation Error: " +
+                           compShaderModuleRes.error());
+  }
+  VkShaderModule compShaderModule = compShaderModuleRes.value();
 
+  // Create Compute Pipeline Layout using your active descriptor set layout
+  VkPipelineLayoutCreateInfo pipelineLayoutInfo{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipelineLayoutInfo.setLayoutCount = 1;
+  pipelineLayoutInfo.pSetLayouts = &m_globalDescriptorSetLayout;
+
+  if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr,
+                             &m_computePipelineLayout) != VK_SUCCESS) {
+    vkDestroyShaderModule(m_device, compShaderModule, nullptr);
+    return std::unexpected(
+        "Vulkan Error: Failed to generate compute pipeline layout.");
+  }
+
+  // Setup Compute Shader Stage
+  VkPipelineShaderStageCreateInfo stageInfo{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+  stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  stageInfo.module = compShaderModule;
+  stageInfo.pName = "main";
+
+  VkComputePipelineCreateInfo pipelineInfo{
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+  pipelineInfo.stage = stageInfo;
+  pipelineInfo.layout = m_computePipelineLayout;
+
+  if (vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo,
+                               nullptr, &m_computePipeline) != VK_SUCCESS) {
+    vkDestroyShaderModule(m_device, compShaderModule, nullptr);
+    return std::unexpected("Vulkan Error: Failed to compile compute pipeline.");
+  }
+
+  vkDestroyShaderModule(m_device, compShaderModule, nullptr);
+  return {};
+}
 std::expected<void, std::string>
 VulkanRenderer::init(const RendererConfig &rendererConfig) {
   m_RendererConfig = rendererConfig;
@@ -415,15 +458,16 @@ VulkanRenderer::init(const RendererConfig &rendererConfig) {
       .and_then([&]() { return createSwapchainImageViews(); })
       .and_then([&]() { return createRenderPass(); })
       .and_then([&]() { return createGraphicsPipeline(); })
+      .and_then([&]() { return createComputePipeline(); })
       .and_then([&]() { return createDepthResources(); })
       .and_then([&]() { return createFramebuffers(); })
-      .and_then([&]() { return createUboResources(); })
       .and_then([&]() { return createCommandInfrastructure(); })
       .and_then([&]() { return createSyncObjects(); })
       .and_then([&]() {
         return createOffscreenRenderTarget(rendererConfig.width,
                                            rendererConfig.height);
-      });
+      })
+      .and_then([&]() { return createUboResources(); });
 }
 
 VulkanRenderer::~VulkanRenderer() { shutdown(); }
@@ -475,9 +519,17 @@ void VulkanRenderer::shutdown() {
     vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
     m_graphicsPipeline = VK_NULL_HANDLE;
   }
+  if (m_computePipeline != VK_NULL_HANDLE) {
+    vkDestroyPipeline(m_device, m_computePipeline, nullptr);
+    m_computePipeline = VK_NULL_HANDLE;
+  }
   if (m_pipelineLayout != VK_NULL_HANDLE) {
     vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     m_pipelineLayout = VK_NULL_HANDLE;
+  }
+  if (m_computePipelineLayout != VK_NULL_HANDLE) {
+    vkDestroyPipelineLayout(m_device, m_computePipelineLayout, nullptr);
+    m_computePipelineLayout = VK_NULL_HANDLE;
   }
   if (m_renderPass != VK_NULL_HANDLE) {
     vkDestroyRenderPass(m_device, m_renderPass, nullptr);
@@ -525,6 +577,22 @@ void VulkanRenderer::shutdown() {
     }
   }
   m_frameUboBuffers.clear();
+
+  for (auto &lightBuf : m_lightBuffers) {
+    if (lightBuf.buffer != VK_NULL_HANDLE) {
+      vmaDestroyBuffer(m_allocator, lightBuf.buffer, lightBuf.allocation);
+      lightBuf.buffer = VK_NULL_HANDLE;
+      lightBuf.allocation = VK_NULL_HANDLE;
+    }
+  }
+  m_lightBuffers.clear();
+
+  if (m_tileLightIndicesBuffer.buffer != VK_NULL_HANDLE) {
+    vmaDestroyBuffer(m_allocator, m_tileLightIndicesBuffer.buffer,
+                     m_tileLightIndicesBuffer.allocation);
+    m_tileLightIndicesBuffer.buffer = VK_NULL_HANDLE;
+    m_tileLightIndicesBuffer.allocation = VK_NULL_HANDLE;
+  }
 
   for (auto &[handle, backend] : m_meshes) {
     if (backend.vertexBuffer != VK_NULL_HANDLE) {

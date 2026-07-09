@@ -3,6 +3,7 @@
 #include <array>
 #include <string>
 // clang-format off
+#include <unordered_map>
 #include <volk.h>
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
@@ -23,9 +24,36 @@ struct TagComponent {
   TagComponent() = default;
 };
 
+struct PointLightComponent {
+  glm::vec3 color{1.0f, 1.0f, 1.0f};
+  float intensity{1.0f};
+  float range{10.0f};
+};
+
+using MaterialHandle = uint32_t;
+
+struct PBRMaterialComponent {
+  std::string name = "New Material";
+
+  MaterialHandle materialHandle{0};
+
+  std::unordered_map<std::string, float> scalarParameters = {
+      {"metallic", 0.0f}, {"roughness", 0.5f}, {"emissionStrength", 1.0f}};
+
+  std::unordered_map<std::string, glm::vec4> vectorParameters = {
+      {"baseColor", glm::vec4(1.0f, 1.0f, 1.0f, 1.00f)},
+      {"emissionColor", glm::vec4(0.0f, 0.0f, 0.0f, 0.00f)}};
+
+  std::unordered_map<std::string, std::string> textureParameters = {
+      {"albedoMap", ""},
+      {"normalMap", ""},
+      {"metallicRoughnessMap", ""},
+      {"emissionMap", ""}};
+};
+
 struct TransformComponent {
   glm::vec3 translation{0.0f};
-  glm::vec3 rotation{0.0f}; // In radians
+  glm::vec3 rotation{0.0f};
   glm::vec3 scale{1.0f};
 
   glm::mat4 getTransform() const {
@@ -76,6 +104,7 @@ struct Vertex {
   glm::vec3 position;
   glm::vec3 color;
   glm::vec2 uv;
+  glm::vec3 normal;
 
   static VkVertexInputBindingDescription getBindingDescription() {
     VkVertexInputBindingDescription bindingDescription{};
@@ -85,9 +114,9 @@ struct Vertex {
     return bindingDescription;
   }
 
-  static std::array<VkVertexInputAttributeDescription, 3>
+  static std::array<VkVertexInputAttributeDescription, 4>
   getAttributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+    std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
 
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
@@ -103,6 +132,11 @@ struct Vertex {
     attributeDescriptions[2].location = 2;
     attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
     attributeDescriptions[2].offset = offsetof(Vertex, uv);
+
+    attributeDescriptions[3].binding = 0;
+    attributeDescriptions[3].location = 3;
+    attributeDescriptions[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[3].offset = offsetof(Vertex, normal);
 
     return attributeDescriptions;
   }

@@ -26,6 +26,8 @@ private:
   IWindow *m_window;
   IRenderer *m_renderer;
   RendererType m_renderer_type;
+  uint32_t m_viewportWidth = 0;
+  uint32_t m_viewportHeight = 0;
 
   VkDescriptorPool m_imguiPool = VK_NULL_HANDLE;
   VkDescriptorSet m_viewportDescriptorSet = VK_NULL_HANDLE;

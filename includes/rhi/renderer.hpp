@@ -8,10 +8,17 @@
 
 namespace ob {
 class VulkanContext;
+class GPUPointLight;
 
 struct RenderItem {
   MeshHandle handle{0};
   glm::mat4 transform;
+
+  glm::vec4 baseColor{1.0f};
+  float metallic{0.0f};
+  float roughness{0.5f};
+  glm::vec3 emissionColor{0.0f};
+  float emissionStrength{1.0f};
 };
 
 struct NativeWindowHandle {
@@ -52,6 +59,9 @@ public:
                        const glm::mat4 &view, const glm::mat4 &proj) = 0;
 
   virtual void *get_viewport_texture_id() const = 0;
+  virtual uint32_t getViewportWidth() const = 0;
+  virtual uint32_t getViewportHeight() const = 0;
+  virtual void updateLightData(std::span<const GPUPointLight> lights) = 0;
 
   [[nodiscard]] virtual VulkanContext get_vulkan_context() const = 0;
   virtual VkImageView getViewportImageView() const = 0;

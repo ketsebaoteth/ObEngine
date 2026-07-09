@@ -55,11 +55,40 @@ std::expected<void, std::string> Engine::init() {
   auto cubeEntity = m_active_scene->createEntity();
 
   m_active_scene->registry().emplace<TagComponent>(cubeEntity, "defaultCube");
-  // Set exactly at the center (0, 0, 0)
   m_active_scene->registry().emplace<TransformComponent>(
       cubeEntity, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f),
       glm::vec3(1.0f, 1.0f, 1.0f));
   m_active_scene->registry().emplace<MeshComponent>(cubeEntity, cube);
+
+  MeshHandle cube2 = m_asset_manager->getMesh("cube");
+  auto cubeEntity2 = m_active_scene->createEntity();
+
+  m_active_scene->registry().emplace<TagComponent>(cubeEntity2, "defaultCube2");
+  m_active_scene->registry().emplace<TransformComponent>(
+      cubeEntity2, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f),
+      glm::vec3(1.0f, 1.0f, 1.0f));
+  m_active_scene->registry().emplace<MeshComponent>(cubeEntity2, cube2);
+
+  auto blueLight = m_active_scene->createEntity();
+  m_active_scene->registry().emplace<TagComponent>(blueLight, "bluelight");
+  m_active_scene->registry().emplace<TransformComponent>(
+      blueLight, glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(0.0f), glm::vec3(1.0f));
+  m_active_scene->registry().emplace<PointLightComponent>(
+      blueLight, glm::vec3(0.05f, 0.05f, 1.0f), 5.0f, 6.0f);
+
+  auto &mat =
+      m_active_scene->registry().emplace<PBRMaterialComponent>(cubeEntity);
+  mat.name = "Gold Cube";
+  mat.scalarParameters["metallic"] = 1.0f;
+  mat.scalarParameters["roughness"] = 0.5f;
+  mat.vectorParameters["baseColor"] = glm::vec4(1.0f, 0.78f, 0.0f, 1.0f);
+  //
+  auto &mat2 =
+      m_active_scene->registry().emplace<PBRMaterialComponent>(cubeEntity2);
+  mat2.name = "Gold Cube";
+  mat2.scalarParameters["metallic"] = 1.0f;  // Make it a pure shiny gold metal!
+  mat2.scalarParameters["roughness"] = 0.5f; // High gloss!
+  mat2.vectorParameters["baseColor"] = glm::vec4(1.0f, 0.78f, 0.0f, 1.0f);
 
   m_last_frame_time = std::chrono::steady_clock::now();
   OB_CORE_INFO("Engine core and graphics subsystems successfully loaded.");
@@ -105,8 +134,8 @@ void Engine::update(float deltaTime) {}
 void Engine::render() {
   m_layer_manager->render();
 
-  uint32_t width = m_window_manager->get_window_impl()->get_width();
-  uint32_t height = m_window_manager->get_window_impl()->get_height();
+  uint32_t width = m_renderer->getViewportWidth();
+  uint32_t height = m_renderer->getViewportHeight();
 
   m_active_scene->draw(m_renderer.get(), width, height);
 }

@@ -23,23 +23,20 @@ MeshHandle AssetManager::createPlane() {
     return m_meshCache["plane"];
   }
 
-  std::vector<Vertex> vertices = {
-      // Position           // Color (Pure White)  // UV
-      {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}}, // TL
-      {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},  // BL
-      {{0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},   // BR
-      {{0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}}   // TR
-  };
+  // Centered quad facing straight up along the positive Y-axis (0, 1, 0)
+  const glm::vec3 planeNormal = glm::vec3(0.0f, 1.0f, 0.0f);
 
-  std::vector<uint32_t> indices = {
-      0, 1, 2, // Triangle 1
-      2, 3, 0  // Triangle 2
-  };
+  std::vector<Vertex> vertices = {
+      // Position           // Color               // UV          // Normal
+      {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}, planeNormal},
+      {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}, planeNormal},
+      {{0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}, planeNormal},
+      {{0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}, planeNormal}};
+
+  std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
 
   MeshHandle handle = m_renderer->uploadMesh(vertices, indices);
   m_meshCache["plane"] = handle;
-  OB_CORE_INFO("AssetManager: Generated primitive [Plane] (Handle: {})",
-               handle);
   return handle;
 }
 
@@ -48,36 +45,116 @@ MeshHandle AssetManager::createCube() {
     return m_meshCache["cube"];
   }
 
+  // 24 Vertices with dedicated, outward-pointing PBR Normals
   std::vector<Vertex> vertices = {
-      {{-0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-      {{-0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
-      {{0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
-      {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+      // --- Front Face (Red, Normal: 0, 0, 1) ---
+      {{-0.5f, -0.5f, 0.5f},
+       {1.0f, 0.0f, 0.0f},
+       {0.0f, 0.0f},
+       {0.0f, 0.0f, 1.0f}},
+      {{-0.5f, 0.5f, 0.5f},
+       {1.0f, 0.0f, 0.0f},
+       {0.0f, 1.0f},
+       {0.0f, 0.0f, 1.0f}},
+      {{0.5f, 0.5f, 0.5f},
+       {1.0f, 0.0f, 0.0f},
+       {1.0f, 1.0f},
+       {0.0f, 0.0f, 1.0f}},
+      {{0.5f, -0.5f, 0.5f},
+       {1.0f, 0.0f, 0.0f},
+       {1.0f, 0.0f},
+       {0.0f, 0.0f, 1.0f}},
 
-      {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-      {{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
-      {{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-      {{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+      // --- Back Face (Green, Normal: 0, 0, -1) ---
+      {{0.5f, -0.5f, -0.5f},
+       {0.0f, 1.0f, 0.0f},
+       {0.0f, 0.0f},
+       {0.0f, 0.0f, -1.0f}},
+      {{0.5f, 0.5f, -0.5f},
+       {0.0f, 1.0f, 0.0f},
+       {0.0f, 1.0f},
+       {0.0f, 0.0f, -1.0f}},
+      {{-0.5f, 0.5f, -0.5f},
+       {0.0f, 1.0f, 0.0f},
+       {1.0f, 1.0f},
+       {0.0f, 0.0f, -1.0f}},
+      {{-0.5f, -0.5f, -0.5f},
+       {0.0f, 1.0f, 0.0f},
+       {1.0f, 0.0f},
+       {0.0f, 0.0f, -1.0f}},
 
-      {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-      {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-      {{0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-      {{0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+      // --- Top Face (Blue, Normal: 0, -1, 0 - Inverted for Vulkan coordinate
+      // space!) ---
+      {{-0.5f, -0.5f, -0.5f},
+       {0.0f, 0.0f, 1.0f},
+       {0.0f, 0.0f},
+       {0.0f, -1.0f, 0.0f}},
+      {{-0.5f, -0.5f, 0.5f},
+       {0.0f, 0.0f, 1.0f},
+       {0.0f, 1.0f},
+       {0.0f, -1.0f, 0.0f}},
+      {{0.5f, -0.5f, 0.5f},
+       {0.0f, 0.0f, 1.0f},
+       {1.0f, 1.0f},
+       {0.0f, -1.0f, 0.0f}},
+      {{0.5f, -0.5f, -0.5f},
+       {0.0f, 0.0f, 1.0f},
+       {1.0f, 0.0f},
+       {0.0f, -1.0f, 0.0f}},
 
-      {{-0.5f, 0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-      {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
-      {{0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-      {{0.5f, 0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+      // --- Bottom Face (Yellow, Normal: 0, 1, 0) ---
+      {{-0.5f, 0.5f, 0.5f},
+       {1.0f, 1.0f, 0.0f},
+       {0.0f, 0.0f},
+       {0.0f, 1.0f, 0.0f}},
+      {{-0.5f, 0.5f, -0.5f},
+       {1.0f, 1.0f, 0.0f},
+       {0.0f, 1.0f},
+       {0.0f, 1.0f, 0.0f}},
+      {{0.5f, 0.5f, -0.5f},
+       {1.0f, 1.0f, 0.0f},
+       {1.0f, 1.0f},
+       {0.0f, 1.0f, 0.0f}},
+      {{0.5f, 0.5f, 0.5f},
+       {1.0f, 1.0f, 0.0f},
+       {1.0f, 0.0f},
+       {0.0f, 1.0f, 0.0f}},
 
-      {{0.5f, -0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
-      {{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-      {{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-      {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+      // --- Right Face (Cyan, Normal: 1, 0, 0) ---
+      {{0.5f, -0.5f, 0.5f},
+       {0.0f, 1.0f, 1.0f},
+       {0.0f, 0.0f},
+       {1.0f, 0.0f, 0.0f}},
+      {{0.5f, 0.5f, 0.5f},
+       {0.0f, 1.0f, 1.0f},
+       {0.0f, 1.0f},
+       {1.0f, 0.0f, 0.0f}},
+      {{0.5f, 0.5f, -0.5f},
+       {0.0f, 1.0f, 1.0f},
+       {1.0f, 1.0f},
+       {1.0f, 0.0f, 0.0f}},
+      {{0.5f, -0.5f, -0.5f},
+       {0.0f, 1.0f, 1.0f},
+       {1.0f, 0.0f},
+       {1.0f, 0.0f, 0.0f}},
 
-      {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-      {{-0.5f, 0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-      {{-0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-      {{-0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}};
+      // --- Left Face (Magenta, Normal: -1, 0, 0) ---
+      {{-0.5f, -0.5f, -0.5f},
+       {1.0f, 0.0f, 1.0f},
+       {0.0f, 0.0f},
+       {-1.0f, 0.0f, 0.0f}},
+      {{-0.5f, 0.5f, -0.5f},
+       {1.0f, 0.0f, 1.0f},
+       {0.0f, 1.0f},
+       {-1.0f, 0.0f, 0.0f}},
+      {{-0.5f, 0.5f, 0.5f},
+       {1.0f, 0.0f, 1.0f},
+       {1.0f, 1.0f},
+       {-1.0f, 0.0f, 0.0f}},
+      {{-0.5f, -0.5f, 0.5f},
+       {1.0f, 0.0f, 1.0f},
+       {1.0f, 0.0f},
+       {-1.0f, 0.0f, 0.0f}}};
 
   std::vector<uint32_t> indices = {
       0,  1,  2,  2,  3,  0,  // Front
@@ -90,7 +167,6 @@ MeshHandle AssetManager::createCube() {
 
   MeshHandle handle = m_renderer->uploadMesh(vertices, indices);
   m_meshCache["cube"] = handle;
-  OB_CORE_INFO("AssetManager: Generated primitive [Cube] (Handle: {})", handle);
   return handle;
 }
 

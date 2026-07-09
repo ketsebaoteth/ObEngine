@@ -57,8 +57,11 @@ endif()
 set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
 set(VERT_SRC "${SHADER_SRC_DIR}/forward_3d.vert")
 set(FRAG_SRC "${SHADER_SRC_DIR}/forward_3d.frag")
+set(COMP_SRC "${SHADER_SRC_DIR}/light_cull.comp")
+
 set(VERT_SPV "${SHADER_SRC_DIR}/forward_3d.vert.spv")
 set(FRAG_SPV "${SHADER_SRC_DIR}/forward_3d.frag.spv")
+set(COMP_SPV "${SHADER_SRC_DIR}/light_cull.comp.spv")
 
 add_custom_command(
     OUTPUT ${VERT_SPV}
@@ -75,7 +78,15 @@ add_custom_command(
     DEPENDS ${FRAG_SRC}
     COMMENT "Compiling Fragment Shader: forward_3d.frag -> SPIR-V"
 )
-add_custom_target(CompileShaders DEPENDS ${VERT_SPV} ${FRAG_SPV})
+
+add_custom_command(
+    OUTPUT ${COMP_SPV}
+    COMMAND glslc ${COMP_SRC} -o ${COMP_SPV}
+    DEPENDS ${COMP_SRC}
+    COMMENT "Compiling Compute Shader: light_cull.comp -> SPIR-V"
+)
+
+add_custom_target(CompileShaders DEPENDS ${VERT_SPV} ${FRAG_SPV} ${COMP_SPV})
 
 # --- ImGui Target (Static Library) ---
 if(NOT OBLIQUE_PROD_BUILD)

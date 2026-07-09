@@ -1,0 +1,142 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+struct PointLight {
+    vec4 positionAndRange;  // xyz = pos, w = range
+    vec4 colorAndIntensity; // xyz = color, w = intensity
+};
+
+// --- BINDING SLOTS ---
+
+layout(binding = 0) uniform GlobalUbo {
+    mat4 view;
+    mat4 proj;
+    vec2 screenSize;
+} ubo;
+
+layout(std430, binding = 1) readonly buffer LightBuffer {
+    PointLight lights[];
+} lightBuffer;
+
+layout(std430, binding = 2) writeonly buffer TileLightIndicesBuffer {
+    uint data[]; 
+} tileLightIndicesBuffer;
+
+layout(binding = 3) uniform sampler2D depthBuffer;
+
+// --- SHARED WORKGROUP MEMORY (Synchronized & Shared across all 256 threads) ---
+shared uint sMinDepth;
+shared uint sMaxDepth;
+shared uint sVisibleLightCount;
+shared uint sVisibleLightIndices[256];
+shared mat4 sProjInverse;
+
+// --- FIXED BUG 1: MOVED PLANES TO SHARED MEMORY ---
+shared vec4 sFrustumPlanes[6]; 
+
+void main() {
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 tileCoords  = ivec2(gl_WorkGroupID.xy);
+    ivec2 tileCount   = ivec2(gl_NumWorkGroups.xy);
+    uint  threadIndex = gl_LocalInvocationIndex;
+
+    // 1. Initialize Shared State
+    if (threadIndex == 0) {
+        sMinDepth = 0xFFFFFFFF;
+        sMaxDepth = 0;
+        sVisibleLightCount = 0;
+        sProjInverse = inverse(ubo.proj);
+    }
+    barrier();
+
+    // 2. Sample Depth Buffer & atomic min/max depth bounds
+    vec2 texSize = vec2(textureSize(depthBuffer, 0));
+    vec2 texCoords = vec2(pixelCoords) / texSize;
+    float depth = texture(depthBuffer, texCoords).r;
+
+    uint depthUint = floatBitsToUint(depth);
+    atomicMin(sMinDepth, depthUint);
+    atomicMax(sMaxDepth, depthUint);
+
+    barrier(); // Wait until all threads have registered their depths
+
+    // Convert back to float
+    float minTileDepth = uintBitsToFloat(sMinDepth);
+    float maxTileDepth = uintBitsToFloat(sMaxDepth);
+
+    // --- STEP 3: CONSTRUCT TILE FRUSTUM PLANES ---
+    if (threadIndex == 0) {
+        // Calculate normalized device coordinates [-1, 1] for tile boundaries
+        vec2 ndcMin = (vec2(tileCoords * 16) / texSize) * 2.0 - 1.0;
+        vec2 ndcMax = (vec2((tileCoords + 1) * 16) / texSize) * 2.0 - 1.0;
+
+        // Unproject corners to construct 3D corners in View Space!
+        vec4 corners[4];
+        corners[0] = sProjInverse * vec4(ndcMin.x, ndcMin.y, 1.0, 1.0); // Bottom-Left
+        corners[1] = sProjInverse * vec4(ndcMax.x, ndcMin.y, 1.0, 1.0); // Bottom-Right
+        corners[2] = sProjInverse * vec4(ndcMin.x, ndcMax.y, 1.0, 1.0); // Top-Left
+        corners[3] = sProjInverse * vec4(ndcMax.x, ndcMax.y, 1.0, 1.0); // Top-Right
+
+        for (int i = 0; i < 4; i++) {
+            corners[i] /= corners[i].w; // Perspective division
+        }
+
+        // Unproject depth limits into true View-Space Z values
+        vec4 depthMinView = sProjInverse * vec4(0.0, 0.0, minTileDepth, 1.0);
+        vec4 depthMaxView = sProjInverse * vec4(0.0, 0.0, maxTileDepth, 1.0);
+        float linearMinZ = depthMinView.z / depthMinView.w;
+        float linearMaxZ = depthMaxView.z / depthMaxView.w;
+
+        // --- COMPUTE PRECISE SIDE PLANE NORMALS VIA CROSS PRODUCTS ---
+        sFrustumPlanes[0] = vec4(normalize(cross(corners[2].xyz, corners[0].xyz)), 0.0); // Left Plane
+        sFrustumPlanes[1] = vec4(normalize(cross(corners[0].xyz, corners[1].xyz)), 0.0); // Bottom Plane
+        sFrustumPlanes[2] = vec4(normalize(cross(corners[1].xyz, corners[3].xyz)), 0.0); // Right Plane
+        sFrustumPlanes[3] = vec4(normalize(cross(corners[3].xyz, corners[2].xyz)), 0.0); // Top Plane
+        
+        // --- FIXED BUG 2: USE THE CORRECTED VIEW-SPACE LINEAR DEPTHS FOR Z BOUNDS ---
+        sFrustumPlanes[4] = vec4(0.0, 0.0, -1.0, -linearMinZ); // Near Plane 
+        sFrustumPlanes[5] = vec4(0.0, 0.0, 1.0, linearMaxZ);   // Far Plane
+    }
+    barrier(); // Wait until Thread 0 has written the shared sFrustumPlanes!
+
+    // 4. Cull Point Lights
+    uint totalLights = 1024;
+    for (uint i = threadIndex; i < totalLights; i += 256) {
+        vec4 posAndRange = lightBuffer.lights[i].positionAndRange;
+        float radius = posAndRange.w;
+
+        if (radius <= 0.0) continue;
+
+        vec3 lightPosView = (ubo.view * vec4(posAndRange.xyz, 1.0)).xyz;
+
+        bool isInside = true;
+
+        for (int p = 0; p < 4; p++) {
+            float distance = dot(sFrustumPlanes[p].xyz, lightPosView) + sFrustumPlanes[p].w;
+            if (distance < -radius) {
+                isInside = false; 
+                break;
+            }
+        }
+
+        if (isInside) {
+            uint index = atomicAdd(sVisibleLightCount, 1);
+            if (index < 256) {
+                sVisibleLightIndices[index] = i;
+            }
+        }
+    }
+    barrier();
+
+    // 5. Write to SSBO
+    if (threadIndex == 0) {
+        uint flatTileIndex = tileCoords.y * tileCount.x + tileCoords.x;
+        uint bufferOffset = flatTileIndex * (1 + 256);
+
+        tileLightIndicesBuffer.data[bufferOffset] = sVisibleLightCount;
+        for (uint i = 0; i < sVisibleLightCount && i < 256; i++) {
+            tileLightIndicesBuffer.data[bufferOffset + 1 + i] = sVisibleLightIndices[i];
+        }
+    }
+}

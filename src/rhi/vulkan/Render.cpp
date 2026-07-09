@@ -1,3 +1,4 @@
+#include "glm/ext/vector_float2.hpp"
 #include "log/log.hpp"
 #include "rhi/vulkan_renderer.hpp"
 #include "scene/Components.hpp"
@@ -59,9 +60,18 @@ void recordGeometryPass(
 
     const auto &backendMesh = it->second;
     if (backendMesh.vertexBuffer != VK_NULL_HANDLE) {
+      PushConstantPayload push{};
+      push.model = item.transform;
+      push.baseColor = item.baseColor;
+      push.metallic = item.metallic;
+      push.roughness = item.roughness;
+      push.emissionColor = item.emissionColor;
+      push.emissionStrength = item.emissionStrength;
+
       vkCmdPushConstants(commandBuffer, pipelineLayout,
-                         VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
-                         &item.transform);
+                         VK_SHADER_STAGE_VERTEX_BIT |
+                             VK_SHADER_STAGE_FRAGMENT_BIT,
+                         0, sizeof(PushConstantPayload), &push);
 
       VkDeviceSize offsets[] = {0};
       vkCmdBindVertexBuffers(commandBuffer, 0, 1, &backendMesh.vertexBuffer,
@@ -97,7 +107,11 @@ void VulkanRenderer::present(std::span<const RenderItem> renderQueue,
     return;
   }
 
-  GlobalUboPayload payload{.view = view, .proj = proj};
+  GlobalUboPayload payload{
+      .view = view,
+      .proj = proj,
+      .screenSize = glm::vec2(static_cast<float>(m_viewportTarget.width),
+                              static_cast<float>(m_viewportTarget.height))};
   std::memcpy(m_frameUboBuffers[m_currentFrame].mappedData, &payload,
               sizeof(GlobalUboPayload));
 
@@ -113,6 +127,87 @@ void VulkanRenderer::present(std::span<const RenderItem> renderQueue,
                   "recording stream.");
     return;
   }
+
+  // =====================================================================
+  // --- FORWARD+: TILE-BASED LIGHT CULLING COMPUTE PASS ---
+  // =====================================================================
+
+  // --- TRANSITION 1: Depth Attachment -> Shader Read (For Compute) ---
+  VkImageMemoryBarrier depthReadBarrier{
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+  depthReadBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  depthReadBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  depthReadBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  depthReadBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  depthReadBarrier.image = m_viewportTarget.depthImage;
+  depthReadBarrier.subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                                       .levelCount = 1,
+                                       .layerCount = 1};
+  depthReadBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  depthReadBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+  vkCmdPipelineBarrier(cmd,
+                       VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                           VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,
+                       nullptr, 1, &depthReadBarrier);
+
+  // 1. Bind Compute Pipeline
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
+
+  // 2. Bind Unified Descriptor Set
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          m_computePipelineLayout, 0, 1,
+                          &m_globalDescriptorSets[m_currentFrame], 0, nullptr);
+
+  // 3. Dispatch the culler across the tile grid
+  uint32_t groupCountX = (m_viewportTarget.width + 15) / 16;
+  uint32_t groupCountY = (m_viewportTarget.height + 15) / 16;
+  vkCmdDispatch(cmd, groupCountX, groupCountY, 1);
+
+  // --- TRANSITION 2: Shader Read -> Depth Attachment (For Geometry Pass) ---
+  VkImageMemoryBarrier depthWriteBarrier{
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+  depthWriteBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  depthWriteBarrier.newLayout =
+      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  depthWriteBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  depthWriteBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  depthWriteBarrier.image = m_viewportTarget.depthImage;
+  depthWriteBarrier.subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                                        .levelCount = 1,
+                                        .layerCount = 1};
+  depthWriteBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  depthWriteBarrier.dstAccessMask =
+      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                       VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                           VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                       0, 0, nullptr, 0, nullptr, 1, &depthWriteBarrier);
+
+  // --- TRANSITION 3: Compute indices list write completed sync barrier ---
+  VkBufferMemoryBarrier bufferBarrier{
+      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+  bufferBarrier.srcAccessMask =
+      VK_ACCESS_SHADER_WRITE_BIT; // Compute wrote indices
+  bufferBarrier.dstAccessMask =
+      VK_ACCESS_SHADER_READ_BIT; // Pixel shader will read them
+  bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  bufferBarrier.buffer = m_tileLightIndicesBuffer.buffer;
+  bufferBarrier.offset = 0;
+  bufferBarrier.size = VK_WHOLE_SIZE;
+
+  vkCmdPipelineBarrier(
+      cmd,
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  // Source stage
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // Destination stage
+      0, 0, nullptr, 1, &bufferBarrier,      // Wait on buffer
+      0, nullptr);
+
+  // =====================================================================
 
   // --- PASS 1: RENDER SCENE GEOMETRY TO OFFSCREEN FRAMEBUFFER ---
   VkExtent2D offscreenExtent{m_viewportTarget.width, m_viewportTarget.height};
@@ -249,7 +344,6 @@ VulkanRenderer::createOffscreenRenderTarget(uint32_t width, uint32_t height) {
   m_viewportTarget.width = width;
   m_viewportTarget.height = height;
 
-  // --- 1. ALLOCATE COLOR RESOURCE (Using VMA) ---
   VkImageCreateInfo imageInfo{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
   imageInfo.imageType = VK_IMAGE_TYPE_2D;
   imageInfo.extent = {width, height, 1};
@@ -275,7 +369,6 @@ VulkanRenderer::createOffscreenRenderTarget(uint32_t width, uint32_t height) {
         "Vulkan Resource Error: Failed to allocate offscreen color image.");
   }
 
-  // Create Color View
   VkImageViewCreateInfo viewInfo{.sType =
                                      VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
   viewInfo.image = m_viewportTarget.colorImage;
@@ -291,9 +384,9 @@ VulkanRenderer::createOffscreenRenderTarget(uint32_t width, uint32_t height) {
         "Vulkan View Error: Failed to create offscreen color view mapping.");
   }
 
-  // --- 2. ALLOCATE DEPTH RESOURCE (Using VMA) ---
   imageInfo.format = VK_FORMAT_D32_SFLOAT;
-  imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  imageInfo.usage =
+      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
   if (vmaCreateImage(m_allocator, &imageInfo, &allocCreateInfo,
                      &m_viewportTarget.depthImage,
@@ -303,7 +396,6 @@ VulkanRenderer::createOffscreenRenderTarget(uint32_t width, uint32_t height) {
         "Vulkan Resource Error: Failed to allocate offscreen depth buffer.");
   }
 
-  // Create Depth View
   viewInfo.image = m_viewportTarget.depthImage;
   viewInfo.format = VK_FORMAT_D32_SFLOAT;
   viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -314,7 +406,6 @@ VulkanRenderer::createOffscreenRenderTarget(uint32_t width, uint32_t height) {
         "Vulkan View Error: Failed to create offscreen depth view mapping.");
   }
 
-  // --- 3. CREATE FRAMEBUFFER ---
   std::array<VkImageView, 2> attachments = {m_viewportTarget.colorView,
                                             m_viewportTarget.depthView};
 
@@ -356,7 +447,24 @@ VulkanRenderer::createOffscreenRenderTarget(uint32_t width, uint32_t height) {
   } else {
     m_viewportTarget.imguiDescriptorSet = VK_NULL_HANDLE;
   }
+  if (!m_globalDescriptorSets.empty()) {
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      VkDescriptorImageInfo depthBufferInfo{};
+      depthBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      depthBufferInfo.imageView = m_viewportTarget.depthView;
+      depthBufferInfo.sampler = m_viewportSampler;
 
+      VkWriteDescriptorSet depthWrite{
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+      depthWrite.dstSet = m_globalDescriptorSets[i];
+      depthWrite.dstBinding = 3;
+      depthWrite.descriptorCount = 1;
+      depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      depthWrite.pImageInfo = &depthBufferInfo;
+
+      vkUpdateDescriptorSets(m_device, 1, &depthWrite, 0, nullptr);
+    }
+  }
   return {};
 }
 

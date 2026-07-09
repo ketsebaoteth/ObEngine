@@ -276,6 +276,20 @@ void ImGuiLayer::on_ui_render() {
   ImGui::Begin("Scene Viewport");
 
   ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+  uint32_t width = static_cast<uint32_t>(viewportPanelSize.x);
+  uint32_t height = static_cast<uint32_t>(viewportPanelSize.y);
+  if (width > 0 && height > 0 &&
+      (width != m_viewportWidth || height != m_viewportHeight)) {
+
+    m_renderer->waitDeviceIdle();
+
+    auto *vkRenderer = static_cast<VulkanRenderer *>(m_renderer);
+    auto res = vkRenderer->createOffscreenRenderTarget(width, height);
+
+    // Save the new active dimensions
+    m_viewportWidth = width;
+    m_viewportHeight = height;
+  }
   ImGui::Image(
       reinterpret_cast<ImTextureID>(m_renderer->get_viewport_texture_id()),
       viewportPanelSize);
