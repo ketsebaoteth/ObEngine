@@ -169,14 +169,6 @@ std::expected<void, std::string> VulkanRenderer::createGraphicsPipeline() {
   pushConstantRange.offset = 0;
   pushConstantRange.size = 64;
 
-  auto dsLayoutRes = createDescriptorSetLayout();
-  if (!dsLayoutRes)
-    return std::unexpected(dsLayoutRes.error());
-
-  auto uboRes = createUboResources();
-  if (!uboRes)
-    return std::unexpected(uboRes.error());
-
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   // TODO : layer Bindless descriptors

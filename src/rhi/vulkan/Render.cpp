@@ -365,41 +365,38 @@ void VulkanRenderer::destroyOffscreenRenderTarget() {
     return;
   }
 
-  // 1. Destroy offscreen framebuffer
   if (m_viewportTarget.framebuffer != VK_NULL_HANDLE) {
     vkDestroyFramebuffer(m_device, m_viewportTarget.framebuffer, nullptr);
     m_viewportTarget.framebuffer = VK_NULL_HANDLE;
   }
 
-  // 2. Destroy offscreen depth views and allocation
   if (m_viewportTarget.depthView != VK_NULL_HANDLE) {
     vkDestroyImageView(m_device, m_viewportTarget.depthView, nullptr);
     m_viewportTarget.depthView = VK_NULL_HANDLE;
   }
   if (m_viewportTarget.depthImage != VK_NULL_HANDLE) {
-    // VMA destroys BOTH the VkImage and frees its GPU allocation in one line!
     vmaDestroyImage(m_allocator, m_viewportTarget.depthImage,
                     m_viewportTarget.depthAllocation);
     m_viewportTarget.depthImage = VK_NULL_HANDLE;
     m_viewportTarget.depthAllocation = VK_NULL_HANDLE;
   }
 
-  // 3. Destroy offscreen color views and allocation
   if (m_viewportTarget.colorView != VK_NULL_HANDLE) {
     vkDestroyImageView(m_device, m_viewportTarget.colorView, nullptr);
     m_viewportTarget.colorView = VK_NULL_HANDLE;
   }
   if (m_viewportTarget.colorImage != VK_NULL_HANDLE) {
-    // VMA destroys BOTH the VkImage and frees its GPU allocation in one line!
     vmaDestroyImage(m_allocator, m_viewportTarget.colorImage,
                     m_viewportTarget.colorAllocation);
     m_viewportTarget.colorImage = VK_NULL_HANDLE;
     m_viewportTarget.colorAllocation = VK_NULL_HANDLE;
   }
 
-  // 4. Safely unregister the descriptor from ImGui
   if (m_viewportTarget.imguiDescriptorSet != VK_NULL_HANDLE) {
-    ImGui_ImplVulkan_RemoveTexture(m_viewportTarget.imguiDescriptorSet);
+    if (ImGui::GetCurrentContext() != nullptr &&
+        ImGui::GetIO().BackendRendererUserData != nullptr) {
+      ImGui_ImplVulkan_RemoveTexture(m_viewportTarget.imguiDescriptorSet);
+    }
     m_viewportTarget.imguiDescriptorSet = VK_NULL_HANDLE;
   }
 }

@@ -429,22 +429,29 @@ VulkanRenderer::init(const RendererConfig &rendererConfig) {
 VulkanRenderer::~VulkanRenderer() { shutdown(); }
 
 void VulkanRenderer::shutdown() {
-  if (m_device != VK_NULL_HANDLE) {
-    vkDeviceWaitIdle(m_device);
+  if (m_device == VK_NULL_HANDLE) {
+    return;
+  }
+  vkDeviceWaitIdle(m_device);
+
+  destroyOffscreenRenderTarget();
+
+  if (m_viewportSampler != VK_NULL_HANDLE) {
+    vkDestroySampler(m_device, m_viewportSampler, nullptr);
+    m_viewportSampler = VK_NULL_HANDLE;
   }
 
-  // 1. Destroy frame-in-flight sync assets safely
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     if (m_imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
       vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
+      m_imageAvailableSemaphores[i] = VK_NULL_HANDLE;
     }
     if (m_inFlightFences[i] != VK_NULL_HANDLE) {
       vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
+      m_inFlightFences[i] = VK_NULL_HANDLE;
     }
   }
 
-  // FIX 1: Destroy render finished semaphores scaled to the actual allocated
-  // array size
   for (VkSemaphore semaphore : m_renderFinishedSemaphores) {
     if (semaphore != VK_NULL_HANDLE) {
       vkDestroySemaphore(m_device, semaphore, nullptr);
@@ -468,12 +475,10 @@ void VulkanRenderer::shutdown() {
     vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
     m_graphicsPipeline = VK_NULL_HANDLE;
   }
-
   if (m_pipelineLayout != VK_NULL_HANDLE) {
     vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     m_pipelineLayout = VK_NULL_HANDLE;
   }
-
   if (m_renderPass != VK_NULL_HANDLE) {
     vkDestroyRenderPass(m_device, m_renderPass, nullptr);
     m_renderPass = VK_NULL_HANDLE;
@@ -483,14 +488,12 @@ void VulkanRenderer::shutdown() {
     vkDestroyImageView(m_device, m_depthImageView, nullptr);
     m_depthImageView = VK_NULL_HANDLE;
   }
-
   if (m_depthImage != VK_NULL_HANDLE) {
     vmaDestroyImage(m_allocator, m_depthImage, m_depthAllocation);
     m_depthImage = VK_NULL_HANDLE;
     m_depthAllocation = VK_NULL_HANDLE;
   }
 
-  // FIX 2: Explicitly matching your uppercase 'C' vector tracking container
   for (VkImageView imageView : m_swapchainImageViews) {
     if (imageView != VK_NULL_HANDLE) {
       vkDestroyImageView(m_device, imageView, nullptr);
@@ -499,13 +502,50 @@ void VulkanRenderer::shutdown() {
   m_swapchainImageViews.clear();
   m_swapchainImages.clear();
 
-  if (m_swapchain != VK_NULL_HANDLE) { // Check spelling layout (capital C)
+  if (m_swapchain != VK_NULL_HANDLE) {
     vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
     m_swapchain = VK_NULL_HANDLE;
   }
 
-  // VMA allocator MUST die before the parent VkDevice handle is destroyed
+  if (m_descriptorPool != VK_NULL_HANDLE) {
+    vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
+    m_descriptorPool = VK_NULL_HANDLE;
+  }
+  if (m_globalDescriptorSetLayout != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(m_device, m_globalDescriptorSetLayout,
+                                 nullptr);
+    m_globalDescriptorSetLayout = VK_NULL_HANDLE;
+  }
+
+  for (auto &ubo : m_frameUboBuffers) {
+    if (ubo.buffer != VK_NULL_HANDLE) {
+      vmaDestroyBuffer(m_allocator, ubo.buffer, ubo.allocation);
+      ubo.buffer = VK_NULL_HANDLE;
+      ubo.allocation = VK_NULL_HANDLE;
+    }
+  }
+  m_frameUboBuffers.clear();
+
+  for (auto &[handle, backend] : m_meshes) {
+    if (backend.vertexBuffer != VK_NULL_HANDLE) {
+      vmaDestroyBuffer(m_allocator, backend.vertexBuffer,
+                       backend.vertexAllocation);
+    }
+    if (backend.indexBuffer != VK_NULL_HANDLE) {
+      vmaDestroyBuffer(m_allocator, backend.indexBuffer,
+                       backend.indexAllocation);
+    }
+  }
+  m_meshes.clear();
+
   if (m_allocator != VK_NULL_HANDLE) {
+    // char *statsString = nullptr;
+    // vmaBuildStatsString(m_allocator, &statsString, VK_TRUE);
+    // if (statsString != nullptr) {
+    //   OB_CORE_WARN("================ VMA LEAK DETECTED ================");
+    //   OB_CORE_WARN("\n{}", statsString); // Prints the complete JSON map
+    //   vmaFreeStatsString(m_allocator, statsString);
+    // }
     vmaDestroyAllocator(m_allocator);
     m_allocator = VK_NULL_HANDLE;
   }

@@ -1,13 +1,14 @@
 #pragma once
 #include "entt/entity/fwd.hpp"
+#include "rhi/renderer.hpp"
 #include "scene/Components.hpp"
 #include <entt/entt.hpp>
 
 namespace ob {
 class Scene {
 public:
-  Scene() = default;
-  ~Scene() = default;
+  Scene(IRenderer *renderer);
+  ~Scene();
 
   entt::entity createEntity() { return m_registry.create(); }
   void destroyEntity(entt::entity entity) { m_registry.destroy(entity); }
@@ -25,6 +26,8 @@ public:
     }
   }
 
+  void draw(IRenderer *renderer, int width, int height);
+
   bool isUsingEditorCamera() { return m_is_using_editor_camera; }
 
   entt::entity getActiveRuntimeCamera() { return m_active_runtime_camera; }
@@ -35,5 +38,6 @@ private:
   entt::registry m_registry;
   entt::entity m_active_runtime_camera{entt::null};
   bool m_is_using_editor_camera = false;
+  IRenderer *m_renderer = nullptr;
 };
 } // namespace ob

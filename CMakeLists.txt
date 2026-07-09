@@ -31,6 +31,7 @@ FetchContent_Declare(
     GIT_TAG        v3.13.0
 )
 FetchContent_MakeAvailable(EnTT)
+set_target_properties(EnTT PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES $<TARGET_PROPERTY:EnTT,INTERFACE_INCLUDE_DIRECTORIES>)
 
 # GLM
 FetchContent_Declare(
@@ -161,3 +162,10 @@ endif()
 # --- Sandbox Executable ---
 add_executable(ObliqueSandbox sandbox/main.cpp)
 target_link_libraries(ObliqueSandbox PRIVATE Oblique)
+#
+# target_compile_options(Oblique PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+# target_link_options(Oblique PRIVATE -fsanitize=address)
+#
+# # Also apply it to your Sandbox executable so it can track the exit:
+# target_compile_options(ObliqueSandbox PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+# target_link_options(ObliqueSandbox PRIVATE -fsanitize=address)

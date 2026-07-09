@@ -16,27 +16,15 @@ Engine::~Engine() {
   if (m_renderer) {
     m_renderer->waitDeviceIdle();
   }
-
-  if (m_active_scene) {
-    auto view = m_active_scene->registry().view<MeshComponent>();
-    for (auto entity : view) {
-      auto &mesh = view.get<MeshComponent>(entity);
-      if (mesh.handle != 0) {
-        m_renderer->destroyMesh(mesh.handle);
-        mesh.handle = 0;
-      }
-    }
-  }
-
+  m_layer_manager.reset();
+  m_active_scene.reset();
   if (m_renderer) {
     m_renderer->shutdown();
   }
-
   OB_CORE_INFO("Engine structures successfully broken down via RAII.");
 }
 
 std::expected<void, std::string> Engine::init() {
-  // 1. Initialize OS Window Manager
   m_window_manager = std::make_unique<WindowManager>();
   auto windowRes = m_window_manager->init();
   if (!windowRes) {
@@ -55,7 +43,7 @@ std::expected<void, std::string> Engine::init() {
                            rendererRes.error());
   }
 
-  m_active_scene = std::make_unique<Scene>();
+  m_active_scene = std::make_unique<Scene>(m_renderer.get());
   m_layer_manager = std::make_unique<LayerManager>(
       m_window_manager->get_window_impl(), m_renderer.get(),
       m_event_manager.get(), m_active_scene.get());
@@ -85,9 +73,9 @@ std::expected<void, std::string> Engine::init() {
 
 void Engine::run() {
   isRunning = true;
+  auto window_impl = m_window_manager->get_window_impl();
   while (isRunning) {
-    std::vector<Event> events =
-        m_window_manager->get_window_impl()->get_events();
+    std::vector<Event> events = window_impl->get_events();
     m_event_manager->update(events);
 
     for (const auto &event : events) {
@@ -95,7 +83,8 @@ void Engine::run() {
         m_renderer->resize(event.window.width, event.window.height);
       }
     }
-    if (m_window_manager->get_window_impl()->should_close()) {
+
+    if (window_impl->should_close()) {
       isRunning = false;
     }
 
@@ -126,40 +115,12 @@ void Engine::update(float deltaTime) {
 }
 
 void Engine::render() {
-  std::vector<RenderItem> renderQueue;
-
-  auto view =
-      m_active_scene->registry().view<TransformComponent, MeshComponent>();
-  for (auto entity : view) {
-    const auto &transform = view.get<TransformComponent>(entity);
-    const auto &mesh = view.get<MeshComponent>(entity);
-    renderQueue.push_back(
-        {.handle = mesh.handle, .transform = transform.getTransform()});
-  }
-
   m_layer_manager->render();
-
-  glm::mat4 viewMatrix(1.0f);
-  glm::mat4 projectionMatrix(1.0f);
 
   uint32_t width = m_window_manager->get_window_impl()->get_width();
   uint32_t height = m_window_manager->get_window_impl()->get_height();
-  float aspectRatio =
-      (height > 0) ? (static_cast<float>(width) / static_cast<float>(height))
-                   : 1.0f;
 
-  entt::entity activeCam = m_active_scene->getActiveRuntimeCamera();
-  if (activeCam != entt::null) {
-    auto &reg = m_active_scene->registry();
-    if (reg.all_of<TransformComponent, CameraComponent>(activeCam)) {
-      const auto &camTransform = reg.get<TransformComponent>(activeCam);
-      const auto &camera = reg.get<CameraComponent>(activeCam);
-      viewMatrix = glm::inverse(camTransform.getTransform());
-      projectionMatrix = camera.getProjection(aspectRatio);
-    }
-  }
-
-  m_renderer->present(renderQueue, viewMatrix, projectionMatrix);
+  m_active_scene->draw(m_renderer.get(), width, height);
 }
 
 } // namespace ob
