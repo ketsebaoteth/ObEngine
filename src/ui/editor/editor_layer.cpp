@@ -1,8 +1,10 @@
 // In editor_layer.cpp
 #include "ui/editor/editor_layer.hpp"
 #include "event/event_manager.hpp"
+#include "imgui.h"
+#include "log/log.hpp"
 #include "windowing/window.hpp"
-#include <GLFW/glfw3.h> // Or your engine event key codes
+#include <GLFW/glfw3.h>
 
 namespace ob {
 
@@ -15,9 +17,13 @@ void EditorLayer::on_attach() {
   m_camera_entity = m_scene->createEntity();
 
   m_scene->registry().emplace<CameraComponent>(m_camera_entity);
+
+  // Match baseline camera values cleanly
   m_scene->registry().emplace<TransformComponent>(
-      m_camera_entity, glm::vec3(0.0f, 0.0f, 5.0f), // Start camera 5 units back
-      glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
+      m_camera_entity, m_editor_camera.position,
+      glm::vec3(glm::radians(m_editor_camera.rotation.x),
+                glm::radians(m_editor_camera.rotation.y), 0.0f),
+      glm::vec3(1.0f, 1.0f, 1.0f));
 
   m_scene->setActiveRuntimeCamera(m_camera_entity);
 
@@ -31,7 +37,6 @@ void EditorLayer::on_detach() {
   }
 }
 
-// Inside editor_layer.cpp
 void EditorLayer::setupInputBindings() {
   m_eventManager->registerActionCallback(
       "MoveForwardStart", [this](ActionDetails) { m_moving_forward = true; });
@@ -68,13 +73,13 @@ void EditorLayer::setupInputBindings() {
             m_first_mouse_move = false;
           }
 
-          float sensitivityX = 0.06f;
-          float sensitivityY = 0.06f;
+          float sensitivityX = 0.1f;
+          float sensitivityY = 0.1f;
 
           double delta_x =
               (m_last_mouse_x - details.mouseLandPos.x) * sensitivityX;
-          double delta_y = (m_last_mouse_y - details.mouseLandPos.y) *
-                           sensitivityY; // Swapped subtraction to invert Y!
+          double delta_y =
+              (m_last_mouse_y - details.mouseLandPos.y) * sensitivityY;
 
           m_last_mouse_x = details.mouseLandPos.x;
           m_last_mouse_y = details.mouseLandPos.y;
@@ -86,7 +91,7 @@ void EditorLayer::setupInputBindings() {
 }
 
 void EditorLayer::on_update(float deltaTime) {
-  float cameraSpeed = 5.0f * deltaTime;
+  float cameraSpeed = 10.0f * deltaTime;
 
   if (m_moving_forward)
     m_editor_camera.moveForward(cameraSpeed);
@@ -100,13 +105,56 @@ void EditorLayer::on_update(float deltaTime) {
   if (m_camera_entity != entt::null) {
     auto &transform =
         m_scene->registry().get<TransformComponent>(m_camera_entity);
+    auto &camera = m_scene->registry().get<CameraComponent>(m_camera_entity);
+
     transform.translation = m_editor_camera.position;
+    camera.view_matrix = m_editor_camera.getViewMatrix();
+
     transform.rotation.x = glm::radians(m_editor_camera.rotation.x);
-    transform.rotation.y = glm::radians(m_editor_camera.rotation.y + 90.0f);
+    transform.rotation.y = glm::radians(m_editor_camera.rotation.y);
     transform.rotation.z = glm::radians(m_editor_camera.rotation.z);
   }
 }
 
-void EditorLayer::on_ui_render() {}
+void EditorLayer::on_ui_render() {
+  ImGui::Begin("Scene Hierarchy");
+  auto &registry = m_scene->registry();
+  auto view = registry.view<TagComponent>();
+
+  for (auto entity : view) {
+    const std::string &tag = view.get<TagComponent>(entity).tag;
+    std::string label =
+        tag + " (ID: " + std::to_string(static_cast<uint32_t>(entity)) + ")";
+
+    ImGuiTreeNodeFlags flags =
+        ((m_selected_entity == entity) ? ImGuiTreeNodeFlags_Selected : 0);
+    flags |= ImGuiTreeNodeFlags_OpenOnArrow |
+             ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Leaf;
+
+    bool opened = ImGui::TreeNodeEx(
+        reinterpret_cast<void *>(static_cast<uintptr_t>(entity)), flags, "%s",
+        label.c_str());
+
+    if (ImGui::IsItemClicked()) {
+      m_selected_entity = entity;
+    }
+    if (opened) {
+      ImGui::TreePop();
+    }
+  }
+
+  if (ImGui::BeginPopupContextWindow(nullptr,
+                                     ImGuiPopupFlags_MouseButtonRight |
+                                         ImGuiPopupFlags_NoOpenOverItems)) {
+    if (ImGui::MenuItem("Create Empty Entity")) {
+      auto newEntity = m_scene->createEntity();
+      m_selected_entity = newEntity;
+    }
+    m_popup_opened = false;
+    ImGui::EndPopup();
+  }
+
+  ImGui::End();
+}
 
 } // namespace ob

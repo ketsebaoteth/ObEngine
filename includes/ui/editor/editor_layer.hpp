@@ -3,7 +3,8 @@
 #include "engine/layer.hpp"
 #include "scene/EditorCamera.hpp"
 #include "scene/Scene.hpp"
-#include <memory>
+#include <entt/entity/entity.hpp>
+#include <entt/entity/fwd.hpp>
 
 namespace ob {
 
@@ -34,7 +35,8 @@ private:
   // The actual camera controller and state
   EditorCamera m_editor_camera;
   entt::entity m_camera_entity = entt::null;
-
+  entt::entity m_selected_entity = entt::null;
+  bool m_popup_opened = false;
   // Input states
   bool m_right_mouse_held = false;
   bool m_keys_pressed[512] = {false};

@@ -1,5 +1,6 @@
 // In engine.hpp
 #pragma once
+#include "assets/asset_manager.hpp"
 #include "event/event_manager.hpp"
 #include "rhi/renderer.hpp"
 #include "scene/Scene.hpp"
@@ -32,6 +33,7 @@ private:
   std::unique_ptr<WindowManager> m_window_manager;
   std::unique_ptr<EventManager> m_event_manager;
   std::unique_ptr<LayerManager> m_layer_manager;
+  std::unique_ptr<AssetManager> m_asset_manager;
 
   std::unique_ptr<IRenderer> m_renderer;
   std::unique_ptr<Scene> m_active_scene;

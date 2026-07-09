@@ -1,4 +1,5 @@
 #pragma once
+#include "glm/ext/matrix_float4x4.hpp"
 #include <array>
 #include <string>
 // clang-format off
@@ -42,6 +43,7 @@ struct CameraComponent {
 
   ProjectionType projection_type = ProjectionType::Perspective;
 
+  glm::mat4 view_matrix{1.0f};
   float fov = 45.0f;
   float near_plane = 0.1f;
   float far_plane = 1000.0f;

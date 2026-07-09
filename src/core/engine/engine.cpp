@@ -2,6 +2,7 @@
 #include "engine/engine.hpp"
 #include "log/log.hpp"
 #include "rhi/vulkan_renderer.hpp"
+#include "scene/Components.hpp"
 #include "scene/Scene.hpp"
 #include <memory>
 
@@ -48,23 +49,16 @@ std::expected<void, std::string> Engine::init() {
       m_window_manager->get_window_impl(), m_renderer.get(),
       m_event_manager.get(), m_active_scene.get());
 
-  std::vector<Vertex> triVertices = {
-      {{0.0f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.5f, 0.0f}},
-      {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-      {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}}};
-  std::vector<uint32_t> triIndices = {0, 1, 2};
+  m_asset_manager = std::make_unique<AssetManager>(m_renderer.get());
 
-  MeshHandle triHandle = m_renderer->uploadMesh(triVertices, triIndices);
-  if (triHandle == 0) {
-    return std::unexpected("Failed to populate 2D triangle assets.");
-  }
+  MeshHandle cube = m_asset_manager->getMesh("cube");
+  auto cubeEntity = m_active_scene->createEntity();
 
-  auto triEntity = m_active_scene->createEntity();
-  m_active_scene->registry().emplace<TagComponent>(triEntity, "2D Triangle");
+  // Set exactly at the center (0, 0, 0)
   m_active_scene->registry().emplace<TransformComponent>(
-      triEntity, glm::vec3(0.0f, 0.0f, -2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
+      cubeEntity, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f),
       glm::vec3(1.0f, 1.0f, 1.0f));
-  m_active_scene->registry().emplace<MeshComponent>(triEntity, triHandle);
+  m_active_scene->registry().emplace<MeshComponent>(cubeEntity, cube);
 
   m_last_frame_time = std::chrono::steady_clock::now();
   OB_CORE_INFO("Engine core and graphics subsystems successfully loaded.");

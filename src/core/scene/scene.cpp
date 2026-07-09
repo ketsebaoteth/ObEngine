@@ -47,4 +47,5 @@ void Scene::draw(IRenderer *renderer, int width, int height) {
 
   renderer->present(renderQueue, viewMatrix, projectionMatrix);
 };
+
 } // namespace ob
