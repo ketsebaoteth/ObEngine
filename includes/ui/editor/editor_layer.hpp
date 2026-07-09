@@ -25,6 +25,8 @@ public:
 
 private:
   void setupInputBindings();
+  void drawHierarchyPanel();
+  void drawInspectorPanel();
 
 private:
   IWindow *m_window;

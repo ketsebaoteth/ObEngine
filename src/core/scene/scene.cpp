@@ -37,10 +37,8 @@ void Scene::draw(IRenderer *renderer, int width, int height) {
   entt::entity activeCam = getActiveRuntimeCamera();
   if (activeCam != entt::null) {
     if (m_registry.all_of<TransformComponent, CameraComponent>(activeCam)) {
-      const auto &camTransform = m_registry.get<TransformComponent>(activeCam);
       const auto &camera = m_registry.get<CameraComponent>(activeCam);
-
-      viewMatrix = glm::inverse(camTransform.getTransform());
+      viewMatrix = camera.view_matrix;
       projectionMatrix = camera.getProjection(aspectRatio);
     }
   }

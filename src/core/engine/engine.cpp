@@ -54,6 +54,7 @@ std::expected<void, std::string> Engine::init() {
   MeshHandle cube = m_asset_manager->getMesh("cube");
   auto cubeEntity = m_active_scene->createEntity();
 
+  m_active_scene->registry().emplace<TagComponent>(cubeEntity, "defaultCube");
   // Set exactly at the center (0, 0, 0)
   m_active_scene->registry().emplace<TransformComponent>(
       cubeEntity, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f),
@@ -99,14 +100,7 @@ void Engine::run() {
   }
 }
 
-void Engine::update(float deltaTime) {
-  auto view =
-      m_active_scene->registry().view<TransformComponent, MeshComponent>();
-  for (auto entity : view) {
-    auto &transform = view.get<TransformComponent>(entity);
-    transform.rotation.z += 0.5f * deltaTime;
-  }
-}
+void Engine::update(float deltaTime) {}
 
 void Engine::render() {
   m_layer_manager->render();

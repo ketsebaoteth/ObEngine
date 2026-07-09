@@ -19,6 +19,8 @@ using MeshHandle = uint32_t;
 
 struct TagComponent {
   std::string tag;
+  TagComponent(const std::string &tagStr) : tag(tagStr) {}
+  TagComponent() = default;
 };
 
 struct TransformComponent {

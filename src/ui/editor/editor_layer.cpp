@@ -18,7 +18,6 @@ void EditorLayer::on_attach() {
 
   m_scene->registry().emplace<CameraComponent>(m_camera_entity);
 
-  // Match baseline camera values cleanly
   m_scene->registry().emplace<TransformComponent>(
       m_camera_entity, m_editor_camera.position,
       glm::vec3(glm::radians(m_editor_camera.rotation.x),
@@ -117,44 +116,8 @@ void EditorLayer::on_update(float deltaTime) {
 }
 
 void EditorLayer::on_ui_render() {
-  ImGui::Begin("Scene Hierarchy");
-  auto &registry = m_scene->registry();
-  auto view = registry.view<TagComponent>();
-
-  for (auto entity : view) {
-    const std::string &tag = view.get<TagComponent>(entity).tag;
-    std::string label =
-        tag + " (ID: " + std::to_string(static_cast<uint32_t>(entity)) + ")";
-
-    ImGuiTreeNodeFlags flags =
-        ((m_selected_entity == entity) ? ImGuiTreeNodeFlags_Selected : 0);
-    flags |= ImGuiTreeNodeFlags_OpenOnArrow |
-             ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Leaf;
-
-    bool opened = ImGui::TreeNodeEx(
-        reinterpret_cast<void *>(static_cast<uintptr_t>(entity)), flags, "%s",
-        label.c_str());
-
-    if (ImGui::IsItemClicked()) {
-      m_selected_entity = entity;
-    }
-    if (opened) {
-      ImGui::TreePop();
-    }
-  }
-
-  if (ImGui::BeginPopupContextWindow(nullptr,
-                                     ImGuiPopupFlags_MouseButtonRight |
-                                         ImGuiPopupFlags_NoOpenOverItems)) {
-    if (ImGui::MenuItem("Create Empty Entity")) {
-      auto newEntity = m_scene->createEntity();
-      m_selected_entity = newEntity;
-    }
-    m_popup_opened = false;
-    ImGui::EndPopup();
-  }
-
-  ImGui::End();
+  drawHierarchyPanel();
+  drawInspectorPanel();
 }
 
 } // namespace ob
