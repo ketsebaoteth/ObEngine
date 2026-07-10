@@ -37,9 +37,18 @@ std::expected<void, std::string> VulkanRenderer::createDescriptorSetLayout() {
   depthLayoutBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
   depthLayoutBinding.pImmutableSamplers = nullptr;
 
-  std::array<VkDescriptorSetLayoutBinding, 4> bindings = {
+  VkDescriptorSetLayoutBinding shadowSamplerLayoutBinding{};
+  shadowSamplerLayoutBinding.binding = 4;
+  shadowSamplerLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  shadowSamplerLayoutBinding.descriptorCount = 1;
+  shadowSamplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  shadowSamplerLayoutBinding.pImmutableSamplers = nullptr;
+
+  std::array<VkDescriptorSetLayoutBinding, 5> bindings = {
       uboLayoutBinding, lightLayoutBinding, tileLayoutBinding,
-      depthLayoutBinding};
+      depthLayoutBinding, shadowSamplerLayoutBinding};
 
   VkDescriptorSetLayoutCreateInfo layoutInfo{};
   layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -55,7 +64,7 @@ std::expected<void, std::string> VulkanRenderer::createDescriptorSetLayout() {
 }
 
 std::expected<void, std::string> VulkanRenderer::createUboResources() {
-  std::array<VkDescriptorPoolSize, 3> poolSizes{};
+  std::array<VkDescriptorPoolSize, 4> poolSizes{};
   poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
@@ -65,6 +74,10 @@ std::expected<void, std::string> VulkanRenderer::createUboResources() {
 
   poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+  poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  poolSizes[3].descriptorCount =
+      static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2);
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -222,8 +235,21 @@ std::expected<void, std::string> VulkanRenderer::createUboResources() {
     depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthWrite.pImageInfo = &depthBufferInfo;
 
-    std::array<VkWriteDescriptorSet, 4> writes = {uboWrite, lightWrite,
-                                                  tileWrite, depthWrite};
+    VkDescriptorImageInfo shadowMapInfo{};
+    shadowMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shadowMapInfo.imageView = m_shadowCubemapView;
+    shadowMapInfo.sampler = m_shadowSampler;
+
+    VkWriteDescriptorSet shadowWrite{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    shadowWrite.dstSet = m_globalDescriptorSets[i];
+    shadowWrite.dstBinding = 4;
+    shadowWrite.descriptorCount = 1;
+    shadowWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    shadowWrite.pImageInfo = &shadowMapInfo;
+
+    std::array<VkWriteDescriptorSet, 5> writes = {
+        uboWrite, lightWrite, tileWrite, depthWrite, shadowWrite};
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()),
                            writes.data(), 0, nullptr);
   }

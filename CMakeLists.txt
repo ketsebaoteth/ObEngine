@@ -58,10 +58,27 @@ set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
 set(VERT_SRC "${SHADER_SRC_DIR}/forward_3d.vert")
 set(FRAG_SRC "${SHADER_SRC_DIR}/forward_3d.frag")
 set(COMP_SRC "${SHADER_SRC_DIR}/light_cull.comp")
+set(SHADOW_SRC "${SHADER_SRC_DIR}/shadow.vert")
+set(SHADOW_FRAG "${SHADER_SRC_DIR}/shadow.frag")
 
 set(VERT_SPV "${SHADER_SRC_DIR}/forward_3d.vert.spv")
 set(FRAG_SPV "${SHADER_SRC_DIR}/forward_3d.frag.spv")
 set(COMP_SPV "${SHADER_SRC_DIR}/light_cull.comp.spv")
+set(SHADOW_SPV "${SHADER_SRC_DIR}/shadow.vert.spv")
+set(SHADOW_FRAG_SPV "${SHADER_SRC_DIR}/shadow.frag.spv")
+
+
+add_custom_command(
+    OUTPUT ${SHADOW_SPV}
+    COMMAND glslc ${SHADOW_SRC} -o ${SHADOW_SPV}
+    DEPENDS ${SHADOW_SRC}
+    COMMENT "Compiling Shadow Shader: shadow.vert -> SPIR-V"
+)
+add_custom_command(
+    OUTPUT ${SHADOW_FRAG_SPV}
+    COMMAND glslc ${SHADOW_FRAG} -o ${SHADOW_FRAG_SPV}
+    DEPENDS ${SHADOW_FRAG}
+)
 
 add_custom_command(
     OUTPUT ${VERT_SPV}
@@ -86,7 +103,7 @@ add_custom_command(
     COMMENT "Compiling Compute Shader: light_cull.comp -> SPIR-V"
 )
 
-add_custom_target(CompileShaders DEPENDS ${VERT_SPV} ${FRAG_SPV} ${COMP_SPV})
+add_custom_target(CompileShaders DEPENDS ${VERT_SPV} ${FRAG_SPV} ${COMP_SPV} ${SHADOW_SPV} ${SHADOW_FRAG_SPV})
 
 # --- ImGui Target (Static Library) ---
 if(NOT OBLIQUE_PROD_BUILD)

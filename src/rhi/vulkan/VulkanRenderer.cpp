@@ -247,8 +247,13 @@ std::expected<void, std::string> VulkanRenderer::createLogicalDevice() {
   deviceFeatures.wideLines = VK_TRUE;
   deviceFeatures.geometryShader = VK_TRUE;
 
+  VkPhysicalDeviceVulkan11Features features11{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+  features11.multiview = VK_TRUE;
+
   VkDeviceCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  createInfo.pNext = &features11;
   createInfo.queueCreateInfoCount =
       static_cast<uint32_t>(queueCreateInfos.size());
   createInfo.pQueueCreateInfos = queueCreateInfos.data();
@@ -456,6 +461,10 @@ VulkanRenderer::init(const RendererConfig &rendererConfig) {
       .and_then([&]() { return createDescriptorSetLayout(); })
       .and_then([&]() { return createSwapChain(); })
       .and_then([&]() { return createSwapchainImageViews(); })
+      .and_then([&]() { return createShadowResources(); })
+      .and_then([&]() { return createShadowRenderPass(); })
+      .and_then([&]() { return createShadowPipeline(); })
+      .and_then([&]() { return createShadowUboResources(); })
       .and_then([&]() { return createRenderPass(); })
       .and_then([&]() { return createGraphicsPipeline(); })
       .and_then([&]() { return createComputePipeline(); })
@@ -522,6 +531,19 @@ void VulkanRenderer::shutdown() {
   if (m_computePipeline != VK_NULL_HANDLE) {
     vkDestroyPipeline(m_device, m_computePipeline, nullptr);
     m_computePipeline = VK_NULL_HANDLE;
+  }
+  if (m_shadowPipeline != VK_NULL_HANDLE) {
+    vkDestroyPipeline(m_device, m_shadowPipeline, nullptr);
+    m_shadowPipeline = VK_NULL_HANDLE;
+  }
+  if (m_shadowPipelineLayout != VK_NULL_HANDLE) {
+    vkDestroyPipelineLayout(m_device, m_shadowPipelineLayout, nullptr);
+    m_shadowPipelineLayout = VK_NULL_HANDLE;
+  }
+  if (m_shadowDescriptorSetLayout != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(m_device, m_shadowDescriptorSetLayout,
+                                 nullptr);
+    m_shadowDescriptorSetLayout = VK_NULL_HANDLE;
   }
   if (m_pipelineLayout != VK_NULL_HANDLE) {
     vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
@@ -606,6 +628,41 @@ void VulkanRenderer::shutdown() {
   }
   m_meshes.clear();
 
+  if (m_shadowFramebuffer != VK_NULL_HANDLE) {
+    vkDestroyFramebuffer(m_device, m_shadowFramebuffer, nullptr);
+    m_shadowFramebuffer = VK_NULL_HANDLE;
+  }
+  if (m_shadowRenderPass != VK_NULL_HANDLE) {
+    vkDestroyRenderPass(m_device, m_shadowRenderPass, nullptr);
+    m_shadowRenderPass = VK_NULL_HANDLE;
+  }
+  if (m_shadowCubemapView != VK_NULL_HANDLE) {
+    vkDestroyImageView(m_device, m_shadowCubemapView, nullptr);
+    m_shadowCubemapView = VK_NULL_HANDLE;
+  }
+  if (m_shadowCubemapImage != VK_NULL_HANDLE) {
+    vmaDestroyImage(m_allocator, m_shadowCubemapImage,
+                    m_shadowCubemapAllocation);
+    m_shadowCubemapImage = VK_NULL_HANDLE;
+    m_shadowCubemapAllocation = VK_NULL_HANDLE;
+  }
+  if (m_shadowSampler != VK_NULL_HANDLE) {
+    vkDestroySampler(m_device, m_shadowSampler, nullptr);
+    m_shadowSampler = VK_NULL_HANDLE;
+  }
+  for (auto &ubo : m_shadowUboBuffers) {
+    if (ubo.buffer != VK_NULL_HANDLE) {
+      vmaDestroyBuffer(m_allocator, ubo.buffer, ubo.allocation);
+      ubo.buffer = VK_NULL_HANDLE;
+      ubo.allocation = VK_NULL_HANDLE;
+    }
+  }
+  m_shadowUboBuffers.clear();
+
+  if (m_shadowDescriptorPool != VK_NULL_HANDLE) {
+    vkDestroyDescriptorPool(m_device, m_shadowDescriptorPool, nullptr);
+    m_shadowDescriptorPool = VK_NULL_HANDLE;
+  }
   if (m_allocator != VK_NULL_HANDLE) {
     // char *statsString = nullptr;
     // vmaBuildStatsString(m_allocator, &statsString, VK_TRUE);

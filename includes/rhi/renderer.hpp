@@ -62,6 +62,7 @@ public:
   virtual uint32_t getViewportWidth() const = 0;
   virtual uint32_t getViewportHeight() const = 0;
   virtual void updateLightData(std::span<const GPUPointLight> lights) = 0;
+  virtual void updateShadowData(glm::vec3 lightPos, float lightRange) = 0;
 
   [[nodiscard]] virtual VulkanContext get_vulkan_context() const = 0;
   virtual VkImageView getViewportImageView() const = 0;

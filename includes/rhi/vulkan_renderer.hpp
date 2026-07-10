@@ -133,21 +133,37 @@ public:
   [[nodiscard]] VkRenderPass getRenderPass() const { return m_renderPass; }
   [[nodiscard]] VkCommandBuffer getCurrentCommandBuffer();
 
-  // Public Utility Methods
   std::expected<void, std::string> createOffscreenRenderTarget(uint32_t width,
                                                                uint32_t height);
   void destroyOffscreenRenderTarget();
   uint32_t findMemoryType(uint32_t typeFilter,
                           VkMemoryPropertyFlags properties);
+  void updateShadowData(glm::vec3 lightPos, float lightRange) override;
 
 private:
-  VkPipelineLayout m_computePipelineLayout = VK_NULL_HANDLE;
-  VkPipeline m_computePipeline = VK_NULL_HANDLE;
+  struct ShadowPushConstant {
+    glm::mat4 model;         // 64 bytes
+    glm::vec4 lightPosRange; // 16 bytes (xyz = lightPos, w = range)
+  };
+
+  glm::vec3 m_shadowLightPos{0.0f};
+  float m_shadowLightRange{10.0f};
+  VkDescriptorSetLayout m_shadowDescriptorSetLayout = VK_NULL_HANDLE;
+  VkDescriptorPool m_shadowDescriptorPool = VK_NULL_HANDLE;
+
+  // Double-buffered shadow UBOs holding the 6 matrices (384 bytes)
   struct GPUBuffer {
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
     void *mappedData = nullptr;
   };
+  std::vector<GPUBuffer> m_shadowUboBuffers;
+  std::vector<VkDescriptorSet> m_shadowDescriptorSets;
+
+  std::expected<void, std::string> createShadowUboResources();
+
+  VkPipelineLayout m_computePipelineLayout = VK_NULL_HANDLE;
+  VkPipeline m_computePipeline = VK_NULL_HANDLE;
   std::vector<GPUBuffer> m_lightBuffers;
   GPUBuffer m_tileLightIndicesBuffer;
 
@@ -174,12 +190,24 @@ private:
   std::expected<void, std::string> createDescriptorSetLayout();
   std::expected<void, std::string> createUboResources();
   std::expected<void, std::string> createComputePipeline();
+  std::expected<void, std::string> createShadowResources();
+  std::expected<void, std::string> createShadowRenderPass();
+  std::expected<void, std::string> createShadowPipeline();
 
-  // Shader compilation helper
+  VkRenderPass m_shadowRenderPass = VK_NULL_HANDLE;
+  VkFramebuffer m_shadowFramebuffer = VK_NULL_HANDLE;
+
+  VkImage m_shadowCubemapImage = VK_NULL_HANDLE;
+  VmaAllocation m_shadowCubemapAllocation = VK_NULL_HANDLE;
+  VkImageView m_shadowCubemapView = VK_NULL_HANDLE;
+  VkSampler m_shadowSampler = VK_NULL_HANDLE;
+
+  VkPipelineLayout m_shadowPipelineLayout = VK_NULL_HANDLE;
+  VkPipeline m_shadowPipeline = VK_NULL_HANDLE;
+
   std::expected<VkShaderModule, std::string>
   createShaderModule(const std::string &shaderPath);
 
-  // Swapchain helper formats
   SwapChainSupportDetails querySwapChainSupportDetails(VkPhysicalDevice device);
   VkSurfaceFormatKHR chooseSwapSurfaceFormat(
       const std::vector<VkSurfaceFormatKHR> &availableFormats);

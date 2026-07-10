@@ -129,6 +129,81 @@ void VulkanRenderer::present(std::span<const RenderItem> renderQueue,
   }
 
   // =====================================================================
+  // --- PASS 0: SINGLE-PASS MULTIVIEW SHADOW DEPTH RENDER PASS ---
+  // =====================================================================
+  uint32_t shadowResolution = 2048;
+
+  VkRenderPassBeginInfo shadowPassInfo{
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+  shadowPassInfo.renderPass = m_shadowRenderPass;
+  shadowPassInfo.framebuffer =
+      m_shadowFramebuffer; // Render directly to the 6-sided cubemap!
+  shadowPassInfo.renderArea.offset = {0, 0};
+  shadowPassInfo.renderArea.extent = {shadowResolution, shadowResolution};
+
+  VkClearValue shadowClear{};
+  shadowClear.depthStencil = {1.0f, 0}; // Clear depth to furthest (1.0)
+  shadowPassInfo.clearValueCount = 1;
+  shadowPassInfo.pClearValues = &shadowClear;
+
+  vkCmdBeginRenderPass(cmd, &shadowPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+  // 1. Bind Shadow Graphics Pipeline
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipeline);
+
+  // 2. Set dynamic viewport & scissor matching the shadow map resolution!
+  VkViewport shadowViewport{0.0f,
+                            0.0f,
+                            static_cast<float>(shadowResolution),
+                            static_cast<float>(shadowResolution),
+                            0.0f,
+                            1.0f};
+  vkCmdSetViewport(cmd, 0, 1, &shadowViewport);
+
+  VkRect2D shadowScissor{{0, 0}, {shadowResolution, shadowResolution}};
+  vkCmdSetScissor(cmd, 0, 1, &shadowScissor);
+
+  // 3. Bind Shadow Descriptor Set (Binding 0: Shadow Matrices UBO)
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          m_shadowPipelineLayout, 0, 1,
+                          &m_shadowDescriptorSets[m_currentFrame], 0, nullptr);
+
+  // 4. Render the shadow-casting geometry!
+  for (const auto &item : renderQueue) {
+    auto it = m_meshes.find(item.handle);
+    if (it == m_meshes.end())
+      continue;
+
+    const auto &backendMesh = it->second;
+    if (backendMesh.vertexBuffer != VK_NULL_HANDLE) {
+
+      ShadowPushConstant push{};
+      push.model = item.transform;
+      push.lightPosRange = glm::vec4(m_shadowLightPos, m_shadowLightRange);
+
+      // --- 2. UPDATE STAGE FLAGS (VERTEX | FRAGMENT) AND SIZE (80 BYTES) ---
+      vkCmdPushConstants(cmd, m_shadowPipelineLayout,
+                         VK_SHADER_STAGE_VERTEX_BIT |
+                             VK_SHADER_STAGE_FRAGMENT_BIT,
+                         0, sizeof(ShadowPushConstant), &push);
+
+      VkDeviceSize offsets[] = {0};
+      vkCmdBindVertexBuffers(cmd, 0, 1, &backendMesh.vertexBuffer, offsets);
+
+      if (backendMesh.indexBuffer != VK_NULL_HANDLE) {
+        vkCmdBindIndexBuffer(cmd, backendMesh.indexBuffer, 0,
+                             VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd, backendMesh.indexCount, 1, 0, 0,
+                         0); // Broadcasts to 6 layers in hardware!
+      } else {
+        vkCmdDraw(cmd, backendMesh.vertexCount, 1, 0, 0);
+      }
+    }
+  }
+
+  vkCmdEndRenderPass(cmd);
+
+  // =====================================================================
   // --- FORWARD+: TILE-BASED LIGHT CULLING COMPUTE PASS ---
   // =====================================================================
 
@@ -462,7 +537,22 @@ VulkanRenderer::createOffscreenRenderTarget(uint32_t width, uint32_t height) {
       depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
       depthWrite.pImageInfo = &depthBufferInfo;
 
-      vkUpdateDescriptorSets(m_device, 1, &depthWrite, 0, nullptr);
+      VkDescriptorImageInfo shadowMapInfo{};
+      shadowMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      shadowMapInfo.imageView = m_shadowCubemapView;
+      shadowMapInfo.sampler = m_shadowSampler;
+
+      VkWriteDescriptorSet shadowWrite{
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+      shadowWrite.dstSet = m_globalDescriptorSets[i];
+      shadowWrite.dstBinding = 4;
+      shadowWrite.descriptorCount = 1;
+      shadowWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      shadowWrite.pImageInfo = &shadowMapInfo;
+
+      std::array<VkWriteDescriptorSet, 2> writes = {depthWrite, shadowWrite};
+      vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()),
+                             writes.data(), 0, nullptr);
     }
   }
   return {};
